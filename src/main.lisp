@@ -15,7 +15,7 @@
 (defun %get-date-formats (number-formats)
   "Filter (obtain) which formats are Date formats, from the number-formats list"
   (loop for f in number-formats
-        for id = (car f)
+        for id = (the fixnum (car f))
         for fmt = (cdr f)
         for is-date = 
         (or (<= 14 id 17) ;; built-in: m/d/yyyy d-mmm-yy d-mmm mmm-yy
@@ -26,39 +26,72 @@
 ;; From Carlos Ungil
 (defun %excel-date (int)
   "Decode the excel date values into something we can parse."
-  (apply #'format nil "~D-~2,'0D-~2,'0D"
-	 (reverse (subseq (multiple-value-list (decode-universal-time (* 24 60 60 (- int 2)))) 3 6))))
+  (declare (type fixnum int))
+  (the string 
+       (apply #'format nil "~D-~2,'0D-~2,'0D"
+              (reverse (subseq (multiple-value-list (decode-universal-time (* 24 60 60 (- int 2)))) 3 6)))))
 
+;; valid format types
+(defparameter *formats*
+  '(:string :int :real :percent :scientific :time :date :datetime))
+
+(defparameter *number-formats*
+  '(:int :real :percent))
+
+(defparameter *unsupported-formats*
+  '(:scientific :time :datetime :unsupported))
+
+(declaim (type cons *formats* *number-formats* *unsupported-formats*))
+
+(defun %get-format-type (id)
+  "Obtain format type (keyword) according to the ID of the format, according to the XLSX standard."
+  (declare (type fixnum id))
+  (the symbol 
+       (cond
+         ((eql id 1) :int)
+         ((or (<= 2 id 8) (<= 37 id 40)) :real)
+         ((<= 9 id 10) :percent)
+         ((or (eql id 11) (eql id 48)) :scientific)
+         ((<= 14 id 17) :date)
+         ((<= 18 id 21) :time)
+         ((eql id 22) :datetime)
+         (t :unsupported))))
+      
 (defun %format-numeric-p (id)
   "Check if Format ID is of a numeric type according to the XLSX standard."
   (declare (type fixnum id))
-  (or (<= 1 id 10)
-      ;; TODO: Format #11 and #48 are scientific (exponential) notation, what to do with them?
-      (<= 37 id 40)))
+  (the boolean 
+       (when (member (%get-format-type id)
+                     *number-formats*) t)))
 
 (defun %read-col (value type style unique-strings date-formats number-formats)
   "Inner function for reading(parsing) a column"
   (declare (type (or string null) value type style)
            (type (or cons null) unique-strings date-formats number-formats))
   (let* ((nstyle (parse-integer style))
-         (date? (and (elt date-formats nstyle)))  ; T if style is part of a date format, otherwise NIL
-         (number? (%format-numeric-p (car (elt number-formats nstyle))))) ; T if format is numeric
-    (declare (type fixnum nstyle)
+         (format-id (car (elt number-formats nstyle)))
+         (date? (and (elt date-formats nstyle))) ; T if style is part of a date format, otherwise NIL
+         (number? (%format-numeric-p format-id ))) ; T if format is numeric
+    (declare (type fixnum nstyle format-id)
              (type boolean date? number?))
-    (handler-case 
-        (cond ((equal type "e") (intern value "KEYWORD")) ;;ERROR
-              ((equal type "str") value) ;; CALCULATED STRING
-              ;; string from the 'unique-strings' file?
-              ((equal type "s")
-               (if number?
-                   (read-from-string value) ;; read number using Lisp reader
-                   ;; else get from unique-strings
-                   (nth (parse-integer value) unique-strings)))
-              (date? (%excel-date (parse-integer value)))
-              ;; Any other case: let Lisp parse the value. 
-              (t (read-from-string value)))
-      (error () "PARSE ERROR")   ; return "ERROR" if parse errors were found
-      )))
+    (the string 
+         (handler-case 
+             (cond ((equal type "e") (intern value "KEYWORD")) ;;ERROR
+                   ((equal type "str") value) ;; CALCULATED STRING, we just return the value
+                   ;; string from the 'unique-strings' file?
+                   ((equal type "s")
+                    (if number?
+                        (read-from-string value) ;; read number using Lisp reader
+                        ;; else get from unique-strings
+                        (nth (parse-integer value) unique-strings)))
+                   (date? (%excel-date (parse-integer value)))
+                   ;; Any other case: find out 
+                   (t (if (member (%get-format-type format-id) *unsupported-formats*)
+                          "UNSUPPORTED FORMAT"
+                          ;;else... try parsing the value!
+                          (read-from-string value))))
+           (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
+           ))))
 
 (defparameter *element-type* '(unsigned-byte 8))
 
