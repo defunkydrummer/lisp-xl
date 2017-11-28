@@ -8,6 +8,22 @@ Common Lisp Library for working with  Microsoft Excel XLSX files, hopefully for 
 
 In the business world, you usually want customers to give you data in the form of compressed, tidy CSV files, but they will send you huge XLSX files instead, files that aren't ready for uplaoding... So, read the mundane Microsoft XLSX files using the celestial programming language, Common Lisp!
 
+This lib is going to be oriented to be used on files that are data-dumps, that is: files that have a header row, followed by data rows. In this kind of files, you would expect to have the initial row to be the "header row", and you would expect that the data types on all the rest of the rows are the same (i.e. if column A has to hold number values, there should NOT be a number on cell A115321...)
+
+You can use the (report-cells-type-change) function to take a look at such offending cells. 
+
+## Features
+
+* Report of "offending" cells; that is, cells that change data type along the way. 
+* Loads and uncompresses the XLSX sheet file only once, to save time.
+* Able to select/load only a range of rows, and/or only a selected range of columns.
+
+## TODO
+
+* Obtain rows as array or other nice format
+* Speedups
+* Free burger for each user
+
 ## Usage
 
 Typical process is as follows:
@@ -18,9 +34,14 @@ Typical process is as follows:
 
 ```common-lisp
 
+;; load lib
 (ql:quickload :lisp-xl)
+
 (defparameter *s* (read-sheet *f* 1)) ; read first sheet of file *f*
-(process-sheet *s* :max-row 100) ;; obtain rows
+(process-sheet *s* :max-row 100) ;; obtain rows as cons
+
+;; Do a report on which cells/rows change format along the file.
+(report-cells-type-change *s*)
 
 ```
 ## Uses
@@ -33,7 +54,9 @@ Typical process is as follows:
 
 ## Installation
 
-Download, copy to quicklisp's "local-projects" dir, then use quicklisp to load and compile:
+For CL newcomers: 
+Make sure you have the cl-xmlspam library downloaded; you can copy it to quicklisp's "local-projects" directory. 
+Download lisp-xl, copy to "local-projects", then use quicklisp to load the rest of the required libs and compile:
 
 ```common-lisp
 (ql:quickload :lisp-xl)
