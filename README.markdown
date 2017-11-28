@@ -1,6 +1,6 @@
 # lisp-xl
 
-* Work in progress! *
+* Work in progress!
 
 Common Lisp Library for working with  Microsoft Excel XLSX files, hopefully for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
 
