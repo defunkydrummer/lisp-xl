@@ -5,6 +5,7 @@
            #:read-sheet
            #:process-sheet
            #:sheet-first-row
+           #:factory-batch-fetch
            #:reports-cells-type-change
    ))
 (in-package :lisp-xl)
@@ -288,6 +289,30 @@
   (process-sheet sheet-struct :max-row 1 :silent T))
 
 
+(defun factory-batch-fetch (batch-size ;in rows
+                            sheet)     ;struct
+  "Returns closure for fetching the sheet in batches (i.e. 5 rows at a time).
+  Invoke (funcall) the closure with no arguments. "
+  (declare (type fixnum batch-size)
+           (type sheet sheet))
+  (let ((next-row 1)
+        (last-stream-position nil)
+        (result nil))
+    (declare (type fixnum next-row)
+             (type (or null cons) result))
+    (flet ((perform-batch ()
+             (setf result (process-sheet sheet :initial-row next-row
+                                               :max-row (+ next-row (- batch-size 1))
+                                               :silent T
+                                               :initial-stream-position last-stream-position))
+             (setf last-stream-position (sheet-last-stream-position sheet))
+             (setf next-row (+ next-row batch-size))
+             result 
+             ))
+      #'perform-batch ;; return the function 
+      )))
+
+
 ;; helper for column info
 (defstruct column-info
   format-id
@@ -361,6 +386,8 @@
                        :max-row max-row
                        :initial-row initial-row
                        :column-list column-list))))
+
+
 
 
 ;; --test
