@@ -4,6 +4,7 @@
   (:export #:list-sheets
            #:read-sheet
            #:process-sheet
+           #:sheet-first-row
            #:reports-cells-type-change
    ))
 (in-package :lisp-xl)
@@ -33,13 +34,13 @@
 
 ;; valid format types
 (defparameter *formats*
-  '(:string :int :real :percent :scientific :time :date :datetime))
+  '(:string :int :real :percent :scientific :time :date :datetime :custom))
 
 (defparameter *number-formats*
   '(:int :real :percent))
 
 (defparameter *unsupported-formats*
-  '(:scientific :time :datetime :unsupported))
+  '(:scientific :time :datetime :unsupported :custom))
 
 (declaim (type cons *formats* *number-formats* *unsupported-formats*))
 
@@ -48,6 +49,7 @@
   (declare (type fixnum id))
   (the symbol 
        (cond
+         ((eq id 0) :string)
          ((eql id 1) :int)
          ((or (<= 2 id 8) (<= 37 id 40)) :real)
          ((<= 9 id 10) :percent)
@@ -55,6 +57,7 @@
          ((<= 14 id 17) :date)
          ((<= 18 id 21) :time)
          ((eql id 22) :datetime)
+         ((>= id 164) :custom) ;; custom formats (found on number-formats list)
          (t :unsupported))))
       
 (defun %format-numeric-p (id)
@@ -76,7 +79,8 @@
              (type boolean date? number?))
     (the string 
          (handler-case 
-             (cond ((equal type "e") (intern value "KEYWORD")) ;;ERROR
+             (cond ((null value) nil)  ; value is nil (case for blank cells)
+                   ((equal type "e") (intern value "KEYWORD")) ;;ERROR
                    ((equal type "str") value) ;; CALCULATED STRING, we just return the value
                    ;; string from the 'unique-strings' file?
                    ((equal type "s")
@@ -87,8 +91,7 @@
                    (date? (%excel-date (parse-integer value)))
                    ;; Any other case: find out 
                    (t (if (member (%get-format-type format-id) *unsupported-formats*)
-                          "UNSUPPORTED FORMAT"
-                          ;;else... try parsing the value!
+                          ;; unsupported? still, try parsing the value!
                           (read-from-string value))))
            (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
            ))))
@@ -101,6 +104,7 @@
   number-formats
   date-formats 
   data-array ;bulk XML data as array
+  last-stream-position ;;last babel-stream position read.
 )  
 
 (defun read-sheet (file sheet &key (silent nil))
@@ -129,7 +133,7 @@
         ;; get-zipfile-entry: Return an entry handle for the file called name.
         (when entry
           ;; Load ZIP into buffer array
-          (unless silent (format t  "Uncompressing...~%"))
+          (unless silent (format t  "Uncompressing to RAM...~%"))
           (setf (sheet-data-array sheet-struct) (zip:zipfile-entry-contents entry))
           (unless silent (format t "Expanded size = ~D bytes ~%" (length (sheet-data-array sheet-struct))))
           ;; return the sheet struct
@@ -145,7 +149,9 @@
                           final-function
                           (max-row nil)
                           (initial-row 1)
-                          (column-list nil)) ;; get only selected columns (list of indexes)
+                          (column-list nil)
+                          (initial-stream-position nil) 
+                          ) ;; get only selected columns (list of indexes)
   "Generalized Process sheet (as struct)"
   ;; use babel to create an in-memory stream that will convert to utf-8
   (declare (type sheet sheet-struct)
@@ -157,6 +163,8 @@
            (type (or cons null) column-list))
   (let ((arr (sheet-data-array sheet-struct)))
     (babel-streams:with-input-from-sequence (str-utf arr :element-type *element-type*)
+      ;; if a stream position has been specified, advance (seek) to such position
+      (when initial-stream-position (file-position str-utf initial-stream-position))
       ;; do stuff with cl-xmlspam library
       (let ((style nil)
             (value nil)
@@ -166,7 +174,7 @@
         (declare (type fixnum col-index row-index)
                  (type (or string null) style type value))
         (with-xspam-source str-utf
-          (block process
+          (block process  
             (element |sheetData|
               (group
                (one-or-more
@@ -196,7 +204,7 @@
                             (setf style (the string _)))
                           (optional-attribute :t ; type (optional)
                             (setf type (the string _)))
-                          (one-of
+                          (optional     ; There can be cells with no value !
                            (element :v  ; value tag
                              (text      ; store the value
                               (setf value (the string _)))))
@@ -205,6 +213,8 @@
                     ;; end row
                     (funcall row-end-function row-index)
                     )))))))
+        ;; store last stream position, for future usage
+        (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
         (funcall final-function)
         ))))
 
@@ -219,48 +229,51 @@
            (type boolean silent debug-print)
            (type (or cons null) column-list))
   (let* ((date-formats (sheet-date-formats sheet-struct))
-        (number-formats (sheet-number-formats sheet-struct))
-        (unique-strings (sheet-unique-strings sheet-struct))
-        (col-cons nil)
-        (row-cons nil)
-         (row-begin-function (lambda (row-index)
-                              (declare (type fixnum row-index))
-                              (when debug-print (format t "~%Row Number = ~D || " row-index))))
-         (column-process-function (lambda (row-index col-index value type style)
-                                    (declare (type fixnum col-index)
-                                             (ignore row-index)
-                                             (type (or string null) value type style ))
-                                   (when debug-print (format t "|~D " col-index))
-                                   ;; log format ID, type and value
-                                   (when debug-print (format t "(~D,~A,~A) "
-                                                             ;; number format type ID 
-                                                             (car (elt number-formats (parse-integer style)))
-                                                             type
-                                                             value))
-                                   ;; store column value
-                                   (push (%read-col value
-                                                    type
-                                                    style
-                                                    unique-strings
-                                                    date-formats
-                                                    number-formats)
-                                         col-cons)))
-         (row-end-function (lambda (row-index)
-                             (declare (type fixnum row-index) (ignore row-index))
-                            (push (nreverse col-cons) row-cons)))
-        (final-function (lambda ()
-                          (unless silent (print "Finalizing rows..."))
-                          (nreverse row-cons)))) ; return rows
+         (number-formats (sheet-number-formats sheet-struct))
+         (unique-strings (sheet-unique-strings sheet-struct))
+         (col-cons nil)
+         (row-cons nil))
     (declare (type (or cons null) row-cons col-cons date-formats number-formats unique-strings))
-    ;; call to the function that performs the actual process
-    (%%process-sheet sheet-struct
-                     :row-begin-function row-begin-function
-                     :column-process-function column-process-function
-                     :row-end-function row-end-function
-                     :final-function final-function
-                     :max-row max-row
-                     :initial-row initial-row
-                     :column-list column-list)))
+    (flet 
+        
+        ((row-begin-function (row-index)
+           (declare (type fixnum row-index))
+           (when debug-print (format t "~%Row Number = ~D || " row-index)))
+         (column-process-function (row-index col-index value type style)
+           (declare (type fixnum col-index)
+                    (ignore row-index)
+                    (type (or string null) value type style ))
+           (when debug-print (format t "|~D " col-index))
+           ;; log format ID, type and value
+           (when debug-print (format t "(~D,~A,~A) "
+                                     ;; number format type ID 
+                                     (car (elt number-formats (parse-integer style)))
+                                     type
+                                     value))
+           ;; store column value
+           (push (%read-col value
+                            type
+                            style
+                            unique-strings
+                            date-formats
+                            number-formats)
+                 col-cons))
+         (row-end-function (row-index)
+           (declare (type fixnum row-index) (ignore row-index))
+           (push (nreverse col-cons) row-cons))
+         (final-function ()
+           (unless silent (print "Finalizing rows..."))
+           (nreverse row-cons)))        ; return rows
+    
+      ;; call to the function that performs the actual process
+      (%%process-sheet sheet-struct
+                       :row-begin-function #'row-begin-function
+                       :column-process-function #'column-process-function
+                       :row-end-function #'row-end-function
+                       :final-function #'final-function
+                       :max-row max-row
+                       :initial-row initial-row
+                       :column-list column-list))))
 
  
 
@@ -273,7 +286,8 @@
 
 ;; helper for column info
 (defstruct column-info
-  style
+  format-id
+  format-keyword
   type)
 
 (defun report-cells-type-change (sheet-struct &key (max-row nil)
@@ -283,56 +297,66 @@
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
            (type (or cons null) column-list))
-  (let* (; (date-formats (sheet-date-formats sheet-struct))
-         (number-formats (sheet-number-formats sheet-struct))
-         ;(unique-strings (sheet-unique-strings sheet-struct))
-         ;; (col-cons nil)
-         ;; (row-cons nil)
+  (let* ((number-formats (sheet-number-formats sheet-struct))
          (info nil)
-         (number-of-changes 0)         
-         (row-begin-function (lambda (row-index)
-                               (declare (type fixnum row-index) (ignore row-index))
-                               nil ))
-         (column-process-function (lambda (row-index col-index value type style)
-                                    (declare (type fixnum col-index)
-                                             (ignore value)
-                                             (type (or string null) value type style ))
-                                    ;; compare style, type  for this column, versus previous. 
-                                    (let* ((cinfo (cdr (assoc col-index info)))
-                                           (equal?
-                                             (and cinfo ;; there is info for this column
-                                                  (equal (column-info-style cinfo) style)
-                                                  (equal (column-info-type cinfo) type))))
-                                      (unless equal?
-                                        ;; different style for this column, protest:
-                                        (incf number-of-changes)
-                                        (format t "Row ~D: Column ~D changed to format ID->~A | type-> ~A ~%"
-                                                row-index col-index
-                                                (car (elt number-formats (parse-integer style)))
-                                                type)
-                                        ;; store new style info for this column and remove old.
-                                        (setf info
-                                              (cons (cons col-index (make-column-info :style style :type type))
-                                                    (remove (assoc col-index info) info)))))                                    
-                                    ))
-         (row-end-function (lambda (row-index)
-                             (declare (type fixnum row-index) (ignore row-index))
-                             nil ))
-         (final-function (lambda ()
-                           (format t "Number of changes: ~D" number-of-changes)
-                           number-of-changes
-                           ))) 
+         (number-of-changes 0)
+         (blank-row T))
+    ;; (col-count 0))
     (declare (type (or cons null) info number-formats)
-             (type fixnum number-of-changes ))
-    ;; call to the function that performs the actual process
-    (%%process-sheet sheet-struct
-                     :row-begin-function row-begin-function
-                     :column-process-function column-process-function
-                     :row-end-function row-end-function
-                     :final-function final-function
-                     :max-row max-row
-                     :initial-row initial-row
-                     :column-list column-list)))
+             (type (boolean) blank-row)    
+             (type fixnum number-of-changes))           
+    (flet ((row-begin-function (row-index)
+             (declare (type fixnum row-index) (ignore row-index))
+             (setf blank-row T))        ; reset blank value (row) flag
+                                       
+           (column-process-function (row-index col-index value type style)
+             (declare (type fixnum col-index)
+                      (type (or string null) value type style ))
+             ;; compare style, type  for this column, versus previous.
+        
+             ;; detect blank values - set to T if all row is blank or blank strings
+             (setf blank-row (and blank-row
+                                  (or (null value) (eq 0 (length value)))))
+             (let* ((fmt-id (car (elt number-formats (parse-integer style))))
+                    (format-keyword (%get-format-type fmt-id))
+                    (cinfo (cdr (assoc col-index info)))
+                    (equal?
+                      (and cinfo ;; there is info for this column
+                           (equal (column-info-format-keyword cinfo) format-keyword)
+                           (equal (column-info-type cinfo) type))))
+               (declare (type fixnum fmt-id)
+                        (type (or symbol null) format-keyword)
+                        (type (or column-info null) cinfo))
+               (unless equal?
+                 ;; different style for this column, protest:
+                 (incf number-of-changes)
+                 (format t "Row ~D: Column ~D changed to format->~A(~D) | type-> ~A ~%"
+                         row-index col-index format-keyword fmt-id type)
+                 ;; store new style info for this column and remove old.
+                 (setf info
+                       (cons (cons col-index (make-column-info :type type
+                                                               :format-id fmt-id
+                                                               :format-keyword format-keyword))
+                             (remove (assoc col-index info) info))))))
+            
+           (row-end-function (row-index)
+             (declare (type fixnum row-index))
+             (when blank-row
+               (format t "~%*********** WARNING : row ~D all blank. ************ ~%~%" row-index)
+               ))
+           (final-function  ()
+             (format t "Number of changes: ~D" number-of-changes)
+             number-of-changes
+             ))
+      ;; call to the function that performs the actual process
+      (%%process-sheet sheet-struct
+                       :row-begin-function #'row-begin-function
+                       :column-process-function #'column-process-function
+                       :row-end-function #'row-end-function
+                       :final-function #'final-function
+                       :max-row max-row
+                       :initial-row initial-row
+                       :column-list column-list))))
 
 
 ;; --test
