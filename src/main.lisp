@@ -222,7 +222,9 @@
                                         (initial-row 1)
                                         (column-list nil) ;; get only selected columns (list of indexes)
                                         (silent nil)
-                                        (debug-print nil))
+                                        (debug-print nil)
+                                        (initial-stream-position nil)) ;; for future use...
+                                        
   "Process sheet (as struct)"
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
@@ -238,6 +240,7 @@
         
         ((row-begin-function (row-index)
            (declare (type fixnum row-index))
+           (setf col-cons nil)
            (when debug-print (format t "~%Row Number = ~D || " row-index)))
          (column-process-function (row-index col-index value type style)
            (declare (type fixnum col-index)
@@ -273,7 +276,8 @@
                        :final-function #'final-function
                        :max-row max-row
                        :initial-row initial-row
-                       :column-list column-list))))
+                       :column-list column-list
+                       :initial-stream-position initial-stream-position))))
 
  
 
