@@ -4,8 +4,9 @@
   (:export #:list-sheets
            #:read-sheet
            #:process-sheet
+           #:close-sheet
            #:sheet-first-row
-           ;#:factory-batch-fetch
+           #:with-open-excel-sheet
            #:reports-cells-type-change
    ))
 (in-package :lisp-xl)
@@ -104,13 +105,22 @@
   unique-strings
   number-formats
   date-formats 
-                                        ;data-array ;bulk XML data as array
   file-name ;; temp file name
-  last-stream-position ;;last babel-stream position read.
-)  
+  last-stream-position ;;last stream position read. Unused for now.
+  )
+
+(defun close-sheet (s)
+  "Deletes the in-memory data for the sheet and deletes the temporary file created for it."
+  (declare (type sheet s))
+  (delete-file (sheet-file-name s))
+  (setf (sheet-file-name s) nil)
+  (setf (sheet-unique-strings s) nil)
+  (setf (sheet-number-formats s) nil)
+  (setf (sheet-date-formats s) nil))
 
 (defun read-sheet (file sheet &key (silent nil))
-  "Read excel file sheet into new sheet struct"
+  "Read excel file sheet into new sheet struct.
+  'Sheet' must be an index, or sheet name. Nil for first sheet."
   (let* ((sheet-struct (make-sheet))
          (sheets (list-sheets file))
 	 (entry-name (cond ((and (null sheet) (= 1 (length sheets)))
@@ -152,6 +162,11 @@
             sheet-struct
             ))))))
 
+(defmacro with-open-excel-sheet ((pathname sheet-index sheet-symbol &optional (silent T)) &body body)
+  "Open excel sheet, and execute body. Sheet struct is bound to sheet-symbol"
+  `(let ((,sheet-symbol (read-sheet ,pathname ,sheet-index :silent ,silent)))
+      (unwind-protect (progn ,@body))
+      (close-sheet ,sheet-symbol)))
 
 (defun %%process-sheet (sheet-struct
                         &key
@@ -161,11 +176,10 @@
                           final-function
                           (max-row nil)
                           (initial-row 1)
-                          (column-list nil)
-                          (initial-stream-position nil) 
-                          ) ;; get only selected columns (list of indexes)
+                          (column-list nil))  ; get only selected columns (list of indexes)
+                          ;(initial-stream-position nil) 
+                          
   "Generalized Process sheet (as struct)"
-  ;; use babel to create an in-memory stream that will convert to utf-8
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
            (type function row-begin-function
@@ -179,7 +193,7 @@
                                       :external-format '(:utf-8 :replacement #\?)
                                       :element-type *element-type*)
       ;; if a stream position has been specified, advance (seek) to such position
-      (when initial-stream-position (file-position str-utf initial-stream-position))
+      ; (when initial-stream-position (file-position str-utf initial-stream-position))
       ;; do stuff with cl-xmlspam library
       (let ((style nil)
             (value nil)
@@ -189,7 +203,8 @@
         (declare (type fixnum col-index row-index)
                  (type (or string null) style type value))
         (with-xspam-source str-utf
-          (block process  
+          (block process
+            (element |sheetData|
               (group
                (one-or-more
                 (element :row
@@ -226,7 +241,7 @@
                           ))))
                     ;; end row
                     (funcall row-end-function row-index)
-                    ))))))
+                    )))))))
         ;; store last stream position, for future usage
         (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
         (funcall final-function)
@@ -235,15 +250,23 @@
 (defun process-sheet (sheet-struct &key (max-row nil)
                                         (initial-row 1)
                                         (column-list nil) ;; get only selected columns (list of indexes)
+                                        (row-function nil)
                                         (silent nil)
-                                        (debug-print nil)
-                                        (initial-stream-position nil)) ;; for future use...
-                                        
-  "Process sheet (as struct). Reads rows from the sheet-struct and returns them as cons."
+                                        (debug-print nil))
+                                        ;(initial-stream-position nil)) ;; for future use...
+"Process sheet (as struct). Reads rows from the sheet-struct and returns them as cons.
+  Important options: 
+  * max-row & initial-row control the rows to fetch. First row = 1. 
+  * column-list receives a list of column numbers, so only those columns are fetched. First column = 1.
+  * row-function receives a lambda where it gets passed, as an argument, the row's column values (as a list).
+                 This can be used, for example, for uploading each row to a DB, etc. 
+                 If row-function is defined, then the row values will not be returned by process-sheet.
+"
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
            (type boolean silent debug-print)
-           (type (or cons null) column-list))
+           (type (or cons null) column-list)
+           (type (or (function (cons)) null) row-function))
   (let* ((date-formats (sheet-date-formats sheet-struct))
          (number-formats (sheet-number-formats sheet-struct))
          (unique-strings (sheet-unique-strings sheet-struct))
@@ -277,7 +300,13 @@
                  col-cons))
          (row-end-function (row-index)
            (declare (type fixnum row-index) (ignore row-index))
-           (push (nreverse col-cons) row-cons))
+           (let ((cc (nreverse col-cons)))
+             (declare (type (or null cons) cc))
+             (if (null row-function)
+                 (push cc row-cons)     ;store row
+                 ;; else: use the row-function to process the row
+                 (funcall row-function cc) ; pass columns as list. 
+                 ))) 
          (final-function ()
            (unless silent (print "Finalizing rows..."))
            (nreverse row-cons)))        ; return rows
@@ -290,8 +319,8 @@
                        :final-function #'final-function
                        :max-row max-row
                        :initial-row initial-row
-                       :column-list column-list
-                       :initial-stream-position initial-stream-position))))
+                       :column-list column-list))))
+                       ;:initial-stream-position initial-stream-position
 
  
 
@@ -300,43 +329,6 @@
 (defun sheet-first-row (sheet-struct)
   "Obtain first row of sheet"
   (process-sheet sheet-struct :max-row 1 :silent T))
-
-
-;; (defparameter *safety-stream-position-margin* 100
-;;   "Number of bytes to 'rewind' the stream position before continuing reading, for safety")
-;; (defparameter *minimum-position-margin* (* 10 *safety-stream-position-margin*)
-;;   "Number of bytes to read until we dare to move the initial-stream-position on reads.")
-
-;; -- needs review, because the last-stream-position returned by our XML reading library
-;; -- is useless! 
-;; (defun factory-batch-fetch (batch-size  ;in rows
-;;                             sheet)      ;struct
-;;   "Returns closure for fetching the sheet in batches (i.e. 5 rows at a time).
-;;   Invoke (funcall) the closure with no arguments. "
-;;   (declare (type fixnum batch-size)
-;;            (type sheet sheet))
-;;   (let ((next-row 1)
-;;         (last-stream-position 0)
-;;         (result nil))
-;;     (declare (type fixnum next-row)
-;;              (type (or null cons) result))
-;;     (flet ((perform-batch ()
-;;              (setf result (process-sheet sheet :initial-row next-row
-;;                                                :max-row (+ next-row (- batch-size 1))
-;;                                                :silent T
-;;                                                :initial-stream-position
-;;                                          ;; compute initial stream pos. for reading the data
-;;                                          (if (>= last-stream-position *minimum-position-margin* )
-;;                                              (- last-stream-position *safety-stream-position-margin*)
-;;                                              ;; else
-;;                                              0))) ; read from start.
-                                            
-;;              (setf last-stream-position (sheet-last-stream-position sheet))
-;;              (setf next-row (+ next-row batch-size))
-;;              result 
-;;              ))
-;;       #'perform-batch ;; return the function 
-;;       )))
 
 
 ;; helper for column info
@@ -413,6 +405,42 @@
                        :initial-row initial-row
                        :column-list column-list))))
 
+
+;; (defparameter *safety-stream-position-margin* 100
+;;   "Number of bytes to 'rewind' the stream position before continuing reading, for safety")
+;; (defparameter *minimum-position-margin* (* 10 *safety-stream-position-margin*)
+;;   "Number of bytes to read until we dare to move the initial-stream-position on reads.")
+
+;; -- needs review, because the last-stream-position returned by our XML reading library
+;; -- is useless! 
+;; (defun factory-batch-fetch (batch-size  ;in rows
+;;                             sheet)      ;struct
+;;   "Returns closure for fetching the sheet in batches (i.e. 5 rows at a time).
+;;   Invoke (funcall) the closure with no arguments. "
+;;   (declare (type fixnum batch-size)
+;;            (type sheet sheet))
+;;   (let ((next-row 1)
+;;         (last-stream-position 0)
+;;         (result nil))
+;;     (declare (type fixnum next-row)
+;;              (type (or null cons) result))
+;;     (flet ((perform-batch ()
+;;              (setf result (process-sheet sheet :initial-row next-row
+;;                                                :max-row (+ next-row (- batch-size 1))
+;;                                                :silent T
+;;                                                :initial-stream-position
+;;                                          ;; compute initial stream pos. for reading the data
+;;                                          (if (>= last-stream-position *minimum-position-margin* )
+;;                                              (- last-stream-position *safety-stream-position-margin*)
+;;                                              ;; else
+;;                                              0))) ; read from start.
+
+;;              (setf last-stream-position (sheet-last-stream-position sheet))
+;;              (setf next-row (+ next-row batch-size))
+;;              result 
+;;              ))
+;;       #'perform-batch ;; return the function 
+;;       )))
 
 
 
