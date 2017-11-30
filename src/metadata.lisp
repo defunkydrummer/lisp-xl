@@ -3,10 +3,15 @@
   (:use #:cl)
   (:export #:get-entry
            #:list-sheets
-           #:get-unique-strings
+           #:get-unique-strings-vector
            #:get-number-formats
            ))
 (in-package :lisp-xl.metadata)
+
+(declaim (optimize (speed 3) (debug 0) (safety 0)))
+
+;; number of entries for unique-strings to be allocated initially.- 
+(defparameter *initial-unique-strings-array-size* 8192) 
 
 ;; From Carlos Ungil
 (defun get-entry (name zip)
@@ -24,12 +29,19 @@
                       (xmls:xmlrep-attrib-value "Target" rel))))
 
 ;; From Carlos Ungil
-(defun get-unique-strings (zip)
-  "Retrieves list of unique strings used on the file. Will be used later for retrieving string values from the xlsx file."
-  (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
-	for x = (xmls:xmlrep-find-child-tag :t str)
-	collect (cond ((equal (second x) '(("space" "preserve"))) " ")
-		      ((xmls:xmlrep-children x) (xmls:xmlrep-string-child x)))))
+;; defunkydrummer-> converted to return an adjustable vector (!) 
+(defun get-unique-strings-vector (zip)
+  "Retrieves VECTOR  of unique strings used on the file. Will be used later for retrieving string values from the xlsx file."
+  (let ((vector (make-array *initial-unique-strings-array-size* :element-type 'string
+                                                                :fill-pointer 0
+                                                                :adjustable T)))
+    (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
+          for x = (xmls:xmlrep-find-child-tag :t str)
+          do (vector-push-extend (the string
+                                      (cond ((equal (second x) '(("space" "preserve"))) " ")
+                                            ((xmls:xmlrep-children x) (xmls:xmlrep-string-child x))))
+                                 vector *initial-unique-strings-array-size*  )) ;enlarge array in a big way
+    vector))
 
 ;; From Carlos Ungil
 ;;TODO - review

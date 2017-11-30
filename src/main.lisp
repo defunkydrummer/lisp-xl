@@ -72,14 +72,15 @@
 (defun %read-col (value type style unique-strings date-formats number-formats)
   "Inner function for reading(parsing) a column"
   (declare (type (or string null) value type style)
-           (type (or cons null) unique-strings date-formats number-formats))
+           (type (vector string) unique-strings)
+           (type (or cons null) date-formats number-formats))
   (let* ((nstyle (parse-integer style))
          (format-id (car (elt number-formats nstyle)))
          (date? (and (elt date-formats nstyle))) ; T if style is part of a date format, otherwise NIL
          (number? (%format-numeric-p format-id ))) ; T if format is numeric
     (declare (type fixnum nstyle format-id)
              (type boolean date? number?))
-    (the string 
+
          (handler-case 
              (cond ((null value) nil)  ; value is nil (case for blank cells)
                    ((equal type "e") (intern value "KEYWORD")) ;;ERROR
@@ -88,21 +89,23 @@
                    ((equal type "s")
                     (if number?
                         (read-from-string value) ;; read number using Lisp reader
-                        ;; else get from unique-strings
-                        (nth (parse-integer value) unique-strings)))
+                        ;; else get from unique-strings vector
+                        (aref unique-strings (the fixnum (parse-integer value)))))
                    (date? (%excel-date (parse-integer value)))
                    ;; Any other case: find out 
                    (t (if (member (%get-format-type format-id) *unsupported-formats*)
                           ;; unsupported? still, try parsing the value!
                           (read-from-string value))))
            (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
-           ))))
+           )))
 
 (defparameter *element-type* '(unsigned-byte 8))
 
+(defparameter *dummy-vector* (make-array 1 :element-type 'string :adjustable T :fill-pointer 0))
 ;; Struct for containing sheet information
 (defstruct sheet
-  unique-strings
+  (unique-strings *dummy-vector*
+                  :type (vector string))
   number-formats
   date-formats 
   file-name ;; temp file name
@@ -114,7 +117,7 @@
   (declare (type sheet s))
   (delete-file (sheet-file-name s))
   (setf (sheet-file-name s) nil)
-  (setf (sheet-unique-strings s) nil)
+  (setf (sheet-unique-strings s) *dummy-vector*)
   (setf (sheet-number-formats s) nil)
   (setf (sheet-date-formats s) nil))
 
@@ -136,7 +139,7 @@
     (zip:with-zipfile (zip file)
       ;; get metadata needed for further process
       (unless silent (format t  "Loading metadata into RAM..."))
-      (setf (sheet-unique-strings sheet-struct) (get-unique-strings zip))
+      (setf (sheet-unique-strings sheet-struct) (get-unique-strings-vector zip))
       (unless silent (format t  "~D unique strings found.~%"
                              (length (sheet-unique-strings sheet-struct))))
       (setf (sheet-number-formats sheet-struct) (get-number-formats zip))
@@ -272,7 +275,8 @@
          (unique-strings (sheet-unique-strings sheet-struct))
          (col-cons nil)
          (row-cons nil))
-    (declare (type (or cons null) row-cons col-cons date-formats number-formats unique-strings))
+    (declare (type (or cons null) row-cons col-cons date-formats number-formats)
+             (type (vector string) unique-strings))
     (flet 
         
         ((row-begin-function (row-index)
