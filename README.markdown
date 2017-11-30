@@ -1,18 +1,16 @@
 # lisp-xl
 
-* Work in progress!
+* Work in progress, but you can try it already... 
 
-Common Lisp Library for working with  Microsoft Excel XLSX files, hopefully for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
+Common Lisp Library for working with  Microsoft Excel XLSX files, for example for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
 
 It does *not* load the whole file into RAM, thus, processing large files is possible.
 
 ## Reason for being
 
-In the business world, you usually want customers to give you data in the form of compressed, tidy CSV files, but they will send you huge XLSX files instead, files that aren't ready for uplaoding... So, read the mundane Microsoft XLSX files using the celestial programming language, Common Lisp!
+In the business world, when your request a "data dump" from a customer's system,  you usually want the customer to give you the data in the form of compressed, tidy CSV files. In real life, often you will get a huge XLSX files instead, where for example the first row isn't the header row, blank rows here and there, etc. In short, files that aren't ready for uplaoding... So, read the mundane Microsoft XLSX files using the celestial programming language, Common Lisp!
 
-This lib is going to be oriented to be used on files that are data-dumps, that is: files that have a header row, followed by data rows. In this kind of files, you would expect to have the initial row to be the "header row", and you would expect that the data types on all the rest of the rows are the same (i.e. if column A has to hold number values, there should NOT be a string on cell A115321...)
-
-You can use the (report-cells-type-change) function to take a look at such offending cells. 
+You can use the (report-cells-type-change) function to take a look at the presence of blank lines or unexpected cell format change in the whole XLSX file.  
 
 ## Features
 
@@ -39,23 +37,40 @@ Typical process is as follows:
 
 ;; load lib
 (ql:quickload :lisp-xl)
+(in-package :lisp-xl)
 
 (defparameter *s* (read-sheet *f* 1)) ; read first sheet of file *f*
-(process-sheet *s* :max-row 100) ;; obtain rows as cons
+(process-sheet *s* :max-row 100) ;; obtain some rows as cons
 
 ;; Do a report on which cells/rows change format along the file.
-(report-cells-type-change *s*)
+(report-cells-type-change *s* :max-row 100)
+
+;; delete temp file / close sheet
+(close-sheet *s*)
 
 ```
+
+Another way is using the macro "With open-excel-sheet", which opens the sheet, performs a block, and then closes the sheet. 
+
+```common-lisp
+
+(with-open-excel-sheet (*f* 1 sheet)
+           ;; do stuff with 'sheet'
+           (report-cells-type-change
+             sheet :max-row 20))
+
+```
+
 ## Uses
 
+* cl-xmlspam (download a copy from my GitHub)
 * ZIP (xlsx files are zipped)
 * xmls
-* cl-xmlspam (download a copy from my GitHub)
+* uiop (
 
 ## Installation
 
-For CL newcomers: 
+For CL newbies (welcome!): 
 Make sure you have the cl-xmlspam library downloaded; you can copy it to quicklisp's "local-projects" directory. 
 Download lisp-xl, copy to "local-projects", then use quicklisp to load the rest of the required libs and compile:
 
@@ -65,8 +80,8 @@ Download lisp-xl, copy to "local-projects", then use quicklisp to load the rest 
 
 ## Acknowledgements
 
-* Some core xlsx metadata read functions taken from the xlsx library by Carlos Ungil
-* Akihide Nano, for putting said library in GitHub
+* Functions for reading the XLSX file metadata taken from the xlsx library by Carlos Ungil.
+* Akihide Nano, for putting Carlos' library in GitHub.
 
 For working with *small* XLSX files in a Cell-oriented way (i.e. "A1", "B4", etc), you might want to take a look at Carlos library:
 https://gitlab.common-lisp.net/cungil/xlsx](https://gitlab.common-lisp.net/cungil/xlsx)
