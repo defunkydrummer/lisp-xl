@@ -5,7 +5,7 @@
            #:read-sheet
            #:process-sheet
            #:sheet-first-row
-           #:factory-batch-fetch
+           ;#:factory-batch-fetch
            #:reports-cells-type-change
    ))
 (in-package :lisp-xl)
@@ -104,7 +104,8 @@
   unique-strings
   number-formats
   date-formats 
-  data-array ;bulk XML data as array
+                                        ;data-array ;bulk XML data as array
+  file-name ;; temp file name
   last-stream-position ;;last babel-stream position read.
 )  
 
@@ -121,10 +122,13 @@
     (unless entry-name
       (error "specify one of the following sheet ids or names: ~{~&~{~S~^~5T~}~}"
 	     (loop for (id name) in sheets collect (list id name))))
-    (unless silent (format t "Reading file ~A...~%" file))
+    (unless silent (format t "Reading file ~A~%" file))
     (zip:with-zipfile (zip file)
       ;; get metadata needed for further process
+      (unless silent (format t  "Loading metadata into RAM..."))
       (setf (sheet-unique-strings sheet-struct) (get-unique-strings zip))
+      (unless silent (format t  "~D unique strings found.~%"
+                             (length (sheet-unique-strings sheet-struct))))
       (setf (sheet-number-formats sheet-struct) (get-number-formats zip))
       (setf (sheet-date-formats sheet-struct)
             (%get-date-formats (sheet-number-formats sheet-struct)))
@@ -133,13 +137,20 @@
                                           zip)))
         ;; get-zipfile-entry: Return an entry handle for the file called name.
         (when entry
-          ;; Load ZIP into buffer array
-          (unless silent (format t  "Uncompressing to RAM...~%"))
-          (setf (sheet-data-array sheet-struct) (zip:zipfile-entry-contents entry))
-          (unless silent (format t "Expanded size = ~D bytes ~%" (length (sheet-data-array sheet-struct))))
-          ;; return the sheet struct
-          sheet-struct
-          )))))
+          ;; Load ZIP into temp file
+          (let ((temp-file-name
+                  (uiop/stream::get-temporary-file :prefix "lisp-xl-temp"
+                                                   :suffix ".tmp")))            
+            (unless silent
+              (format t  "Uncompressing to File [~A] ...~%" temp-file-name))
+            (with-open-file (fstream temp-file-name :direction :output
+                                                    :if-exists :overwrite
+                                                    :element-type *element-type*)
+              
+              (zip:zipfile-entry-contents entry fstream))
+            (setf (sheet-file-name sheet-struct) temp-file-name)
+            sheet-struct
+            ))))))
 
 
 (defun %%process-sheet (sheet-struct
@@ -162,8 +173,11 @@
                  row-end-function
                  final-function)
            (type (or cons null) column-list))
-  (let ((arr (sheet-data-array sheet-struct)))
-    (babel-streams:with-input-from-sequence (str-utf arr :element-type *element-type*)
+  (let ((filename (sheet-file-name sheet-struct)))
+    (with-open-file (str-utf filename :direction :input
+                                      ;; SBCL implementation dependent?
+                                      :external-format '(:utf-8 :replacement #\?)
+                                      :element-type *element-type*)
       ;; if a stream position has been specified, advance (seek) to such position
       (when initial-stream-position (file-position str-utf initial-stream-position))
       ;; do stuff with cl-xmlspam library
@@ -176,7 +190,6 @@
                  (type (or string null) style type value))
         (with-xspam-source str-utf
           (block process  
-            (element |sheetData|
               (group
                (one-or-more
                 (element :row
@@ -213,7 +226,7 @@
                           ))))
                     ;; end row
                     (funcall row-end-function row-index)
-                    )))))))
+                    ))))))
         ;; store last stream position, for future usage
         (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
         (funcall final-function)
@@ -226,7 +239,7 @@
                                         (debug-print nil)
                                         (initial-stream-position nil)) ;; for future use...
                                         
-  "Process sheet (as struct)"
+  "Process sheet (as struct). Reads rows from the sheet-struct and returns them as cons."
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
            (type boolean silent debug-print)
@@ -289,28 +302,41 @@
   (process-sheet sheet-struct :max-row 1 :silent T))
 
 
-(defun factory-batch-fetch (batch-size ;in rows
-                            sheet)     ;struct
-  "Returns closure for fetching the sheet in batches (i.e. 5 rows at a time).
-  Invoke (funcall) the closure with no arguments. "
-  (declare (type fixnum batch-size)
-           (type sheet sheet))
-  (let ((next-row 1)
-        (last-stream-position nil)
-        (result nil))
-    (declare (type fixnum next-row)
-             (type (or null cons) result))
-    (flet ((perform-batch ()
-             (setf result (process-sheet sheet :initial-row next-row
-                                               :max-row (+ next-row (- batch-size 1))
-                                               :silent T
-                                               :initial-stream-position last-stream-position))
-             (setf last-stream-position (sheet-last-stream-position sheet))
-             (setf next-row (+ next-row batch-size))
-             result 
-             ))
-      #'perform-batch ;; return the function 
-      )))
+;; (defparameter *safety-stream-position-margin* 100
+;;   "Number of bytes to 'rewind' the stream position before continuing reading, for safety")
+;; (defparameter *minimum-position-margin* (* 10 *safety-stream-position-margin*)
+;;   "Number of bytes to read until we dare to move the initial-stream-position on reads.")
+
+;; -- needs review, because the last-stream-position returned by our XML reading library
+;; -- is useless! 
+;; (defun factory-batch-fetch (batch-size  ;in rows
+;;                             sheet)      ;struct
+;;   "Returns closure for fetching the sheet in batches (i.e. 5 rows at a time).
+;;   Invoke (funcall) the closure with no arguments. "
+;;   (declare (type fixnum batch-size)
+;;            (type sheet sheet))
+;;   (let ((next-row 1)
+;;         (last-stream-position 0)
+;;         (result nil))
+;;     (declare (type fixnum next-row)
+;;              (type (or null cons) result))
+;;     (flet ((perform-batch ()
+;;              (setf result (process-sheet sheet :initial-row next-row
+;;                                                :max-row (+ next-row (- batch-size 1))
+;;                                                :silent T
+;;                                                :initial-stream-position
+;;                                          ;; compute initial stream pos. for reading the data
+;;                                          (if (>= last-stream-position *minimum-position-margin* )
+;;                                              (- last-stream-position *safety-stream-position-margin*)
+;;                                              ;; else
+;;                                              0))) ; read from start.
+                                            
+;;              (setf last-stream-position (sheet-last-stream-position sheet))
+;;              (setf next-row (+ next-row batch-size))
+;;              result 
+;;              ))
+;;       #'perform-batch ;; return the function 
+;;       )))
 
 
 ;; helper for column info

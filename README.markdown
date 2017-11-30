@@ -4,6 +4,8 @@
 
 Common Lisp Library for working with  Microsoft Excel XLSX files, hopefully for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
 
+It does *not* load the whole file into RAM, thus, processing large files is possible.
+
 ## Reason for being
 
 In the business world, you usually want customers to give you data in the form of compressed, tidy CSV files, but they will send you huge XLSX files instead, files that aren't ready for uplaoding... So, read the mundane Microsoft XLSX files using the celestial programming language, Common Lisp!
@@ -14,6 +16,7 @@ You can use the (report-cells-type-change) function to take a look at such offen
 
 ## Features
 
+* Does NOT load the whole file into RAM.
 * Report of "offending" cells; that is, cells that change data type along the way. 
 * Report of unexpected blank rows
 * Loads and uncompresses the XLSX sheet file only once, to save time.
@@ -21,7 +24,6 @@ You can use the (report-cells-type-change) function to take a look at such offen
 
 ## TODO
 
-* Obtain rows as other formats
 * Speedups
 * Free burger for each user
 
@@ -29,7 +31,7 @@ You can use the (report-cells-type-change) function to take a look at such offen
 
 Typical process is as follows:
 
-1. Load the sheet into a sheet struct. For this you need the file path, and the name/index of the sheet (1 = first sheet).
+1. Load the sheet, creating a struct that holds info about the sheet. For this you need the file path, and the name/index of the sheet (1 = first sheet).
 
 2. Query the sheet using the provided functions. 
 
@@ -48,8 +50,6 @@ Typical process is as follows:
 ## Uses
 
 * ZIP (xlsx files are zipped)
-* babel (for utf8 decoding)
-* babel-stream
 * xmls
 * cl-xmlspam (download a copy from my GitHub)
 

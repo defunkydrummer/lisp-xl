@@ -8,9 +8,10 @@
   :author "Flavio Egoavil"
   :license "MIT license"
   :depends-on (:zip
-               :babel
-               :babel-streams
+               ;:babel
+               ;:babel-streams
                :cl-xmlspam
+               :uiop
                :xmls)
   :components ((:module "src"
                 :components
