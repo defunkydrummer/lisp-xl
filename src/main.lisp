@@ -69,35 +69,58 @@
        (when (member (%get-format-type id)
                      *number-formats*) t)))
 
-(defun %read-col (value type style unique-strings date-formats number-formats)
-  "Inner function for reading(parsing) a column"
-  (declare (type (or string null) value type style)
-           (type (vector string) unique-strings)
-           (type (or cons null) date-formats number-formats))
-  (let* ((nstyle (parse-integer style))
-         (format-id (car (elt number-formats nstyle)))
-         (date? (and (elt date-formats nstyle))) ; T if style is part of a date format, otherwise NIL
-         (number? (%format-numeric-p format-id ))) ; T if format is numeric
-    (declare (type fixnum nstyle format-id)
-             (type boolean date? number?))
+;; decisions on how to parse cell values
+(defparameter *decision-parse-string* 0)
+(defparameter *decision-parse-number* 1)
+(defparameter *decision-try-lisp-reader* 2)
+(defparameter *expected-number-formats-max-size* 512)
 
-         (handler-case 
-             (cond ((null value) nil)  ; value is nil (case for blank cells)
-                   ((equal type "e") (intern value "KEYWORD")) ;;ERROR
-                   ((equal type "str") value) ;; CALCULATED STRING, we just return the value
-                   ;; string from the 'unique-strings' file?
-                   ((equal type "s")
-                    (if number?
-                        (read-from-string value) ;; read number using Lisp reader
-                        ;; else get from unique-strings vector
-                        (aref unique-strings (the fixnum (parse-integer value)))))
-                   (date? (%excel-date (parse-integer value)))
-                   ;; Any other case: find out 
-                   (t (if (member (%get-format-type format-id) *unsupported-formats*)
-                          ;; unsupported? still, try parsing the value!
-                          (read-from-string value))))
-           (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
-           )))
+(defun %get-col-parse-decisions-vector (date-formats number-formats)
+  (declare (ignore date-formats))
+  "Inner function. Obtain vector of decisions on how to parse the column value according to the 'style' ID"
+  (let ((vector (make-array *expected-number-formats-max-size*
+                            :element-type 'fixnum :adjustable nil)))
+    (loop with vector-index = 0
+          for nf in number-formats
+          for format-id = (car nf)
+          for format-type = (%get-format-type format-id)
+       
+          for decision = (cond
+                           ((equal format-type :string) *decision-parse-string*)
+                           ((member format-type *number-formats*) *decision-parse-number*)
+                           ((member format-type *unsupported-formats*) *decision-try-lisp-reader*)
+                           (t *decision-try-lisp-reader*)) ; note! 
+          do (setf (aref vector vector-index) decision)
+             (incf vector-index))
+    vector
+    ))
+  
+
+(defun %read-col (value type style unique-strings decision-vector)
+  "Inner function for reading(parsing) a column"
+  (declare (type (or string null) value style)
+           (type string type)
+           (type (vector string) unique-strings)
+           (type (simple-array fixnum) decision-vector))
+  (let* ((nstyle (the fixnum (parse-integer style)))
+         (decision (aref decision-vector nstyle)))
+    (declare (type fixnum nstyle decision))
+    (handler-case 
+        (cond ((null value) nil) ; value is nil (case for blank cells)
+              ;; ((string= type "e") (intern value "KEYWORD")) 
+              ((string= type "str") value) ;; CALCULATED STRING, we just return the value
+              ;; string from the 'unique-strings' file?
+              ((string= type "s")
+               (if
+                ;; number 
+                (eq decision *decision-parse-number*) (read-from-string value)
+                ;; else - read string from table
+                (aref unique-strings (the fixnum (parse-integer value))))) 
+              ;; date, etc
+              ;; for now, we try the lisp reader 
+              (t (read-from-string value))) 
+      (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
+      )))
 
 (defparameter *element-type* '(unsigned-byte 8))
 
@@ -200,11 +223,12 @@
       ;; do stuff with cl-xmlspam library
       (let ((style nil)
             (value nil)
-            (type nil)
+            (type "")
             (col-index 0)
             (row-index 0))
         (declare (type fixnum col-index row-index)
-                 (type (or string null) style type value))
+                 (type string type)
+                 (type (or string null) style value))
         (with-xspam-source str-utf
           (block process
             (element |sheetData|
@@ -221,7 +245,7 @@
                     ;; clear row values
                     (setf style nil
                           value nil
-                          type nil
+                          type ""
                           col-index 0)
                     (funcall row-begin-function row-index)
                     (group
@@ -273,10 +297,13 @@
   (let* ((date-formats (sheet-date-formats sheet-struct))
          (number-formats (sheet-number-formats sheet-struct))
          (unique-strings (sheet-unique-strings sheet-struct))
+         ;; pre-process decisions on how to handle cells
+         (decision-vector (%get-col-parse-decisions-vector date-formats number-formats))
          (col-cons nil)
          (row-cons nil))
     (declare (type (or cons null) row-cons col-cons date-formats number-formats)
-             (type (vector string) unique-strings))
+             (type (vector string) unique-strings)
+             (type (vector fixnum) decision-vector))           
     (flet 
         
         ((row-begin-function (row-index)
@@ -299,8 +326,7 @@
                             type
                             style
                             unique-strings
-                            date-formats
-                            number-formats)
+                            decision-vector)
                  col-cons))
          (row-end-function (row-index)
            (declare (type fixnum row-index) (ignore row-index))
