@@ -22,7 +22,7 @@ You can use the (report-cells-type-change) function to take a look at the presen
 
 ## TODO
 
-* Speedups
+* Parsing of date values correctly
 * Free burger for each user
 
 ## Usage
@@ -50,7 +50,7 @@ Typical process is as follows:
 
 ```
 
-Another way is using the macro "With open-excel-sheet", which opens the sheet, performs a block, and then closes the sheet. 
+Another way is using the macro "With open-excel-sheet", which opens the sheet, performs a block, and then closes the sheet, thus deleting the temporary file. 
 
 ```common-lisp
 
@@ -59,6 +59,18 @@ Another way is using the macro "With open-excel-sheet", which opens the sheet, p
            (report-cells-type-change
              sheet :max-row 20))
 
+```
+
+To do useful stuff, you would create a function that will process each row and do something useful with it (Each row will be received as a list of values).
+
+```common-lisp
+
+ (with-open-excel-sheet (*f* 1 sheet nil)
+           ;; our "useful" function that will process each row
+           (flet ((f (row) 
+                    (print row)))
+             ;; call #'f at each row
+             (process-sheet sheet :max-row 10 :row-function #'f)))
 ```
 
 ## Uses
