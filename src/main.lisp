@@ -1,6 +1,6 @@
 (in-package :cl-user)
 (defpackage :lisp-xl
-  (:use #:cl :xspam :lisp-xl.metadata)
+  (:use #:cl #|:xspam|# :lisp-xl.metadata)
   (:export #:list-sheets
            #:read-sheet
            #:process-sheet
@@ -98,8 +98,7 @@
 
 (defun %read-col (value type style unique-strings decision-vector)
   "Inner function for reading(parsing) a column"
-  (declare (type (or string null) value style)
-           (type string type)
+  (declare (type (or string null) value style type)
            (type (vector string) unique-strings)
            (type (simple-array fixnum) decision-vector))
   (let* ((nstyle (the fixnum (parse-integer style)))
@@ -107,17 +106,19 @@
     (declare (type fixnum nstyle decision))
     (handler-case 
         (cond ((null value) nil) ; value is nil (case for blank cells)
-              ;; ((string= type "e") (intern value "KEYWORD")) 
-              ((string= type "str") value) ;; CALCULATED STRING, we just return the value
-              ;; string from the 'unique-strings' file?
-              ((string= type "s")
-               (if
-                ;; number 
-                (eq decision *decision-parse-number*) (read-from-string value)
-                ;; else - read string from table
-                (aref unique-strings (the fixnum (parse-integer value))))) 
+              ;; ((string= type "e") (intern value "KEYWORD"))
+              ((not (null type))
+               (cond 
+                 ((string= type "str") value) ;; CALCULATED STRING, we just return the value
+                 ;; string from the 'unique-strings' file?
+                 ((string= type "s")
+                  (if
+                   ;; number 
+                   (eq decision *decision-parse-number*) (read-from-string value)
+                   ;; else - read string from table
+                   (aref unique-strings (the fixnum (parse-integer value)))))))
               ;; date, etc
-              ;; for now, we try the lisp reader 
+              ;; for now, we try the lisp reader
               (t (read-from-string value))) 
       (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
       )))
@@ -194,17 +195,20 @@
       (unwind-protect (progn ,@body))
       (close-sheet ,sheet-symbol)))
 
+
+;; NOTE: New version, uses klacks instead of cl-xmlspam
+;; klacks is part of CXML
 (defun %%process-sheet (sheet-struct
-                        &key
-                          row-begin-function
-                          column-process-function
-                          row-end-function
-                          final-function
-                          (max-row nil)
-                          (initial-row 1)
-                          (column-list nil))  ; get only selected columns (list of indexes)
-                          ;(initial-stream-position nil) 
-                          
+                         &key
+                           row-begin-function
+                           column-process-function
+                           row-end-function
+                           final-function
+                           (max-row nil)
+                           (initial-row 1)
+                           (column-list nil))  ; get only selected columns (list of indexes)
+                                        ;(initial-stream-position nil) 
+  
   "Generalized Process sheet (as struct)"
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
@@ -213,66 +217,155 @@
                  row-end-function
                  final-function)
            (type (or cons null) column-list))
-  (let ((filename (sheet-file-name sheet-struct)))
-    (with-open-file (str-utf filename :direction :input
-                                      ;; SBCL implementation dependent?
-                                      :external-format '(:utf-8 :replacement #\?)
-                                      :element-type *element-type*)
-      ;; if a stream position has been specified, advance (seek) to such position
-      ; (when initial-stream-position (file-position str-utf initial-stream-position))
-      ;; do stuff with cl-xmlspam library
+  (let* ((filename (sheet-file-name sheet-struct))
+         (source (cxml:make-source filename)))
+    (klacks:with-open-source (klacks-source source)
       (let ((style nil)
             (value nil)
-            (type "")
+            (type nil)
+            (col-cons ())
+            (row-cons ())
+            (cell-attributes ())
+            (cell-value-cons ())
             (col-index 0)
-            (row-index 0))
+            (row-index 0)
+            (row-index-str nil))
         (declare (type fixnum col-index row-index)
-                 (type string type)
-                 (type (or string null) style value))
-        (with-xspam-source str-utf
-          (block process
-            (element |sheetData|
-              (group
-               (one-or-more
-                (element :row
-                  ;; a row -- start row processing
-                  (attribute :r         ; row number
-                    (setf row-index (parse-integer (the string _)))
-                    ;; exit if max-row has been reached
-                    (when max-row
-                      (if (> row-index max-row) (return-from process))))
-                  (when (>= row-index initial-row)
-                    ;; clear row values
-                    (setf style nil
-                          value nil
-                          type ""
-                          col-index 0)
-                    (funcall row-begin-function row-index)
-                    (group
-                     (one-or-more       ; zero or more?
-                      (element :c
-                        ;;  a column -- start column procesing
-                        (incf col-index)
-                        ;; skip this column if index not in the (optional) column list
-                        (unless (and column-list
-                                     (not (member col-index column-list)))
-                          (optional-attribute :s ; style (optional)
-                            (setf style (the string _)))
-                          (optional-attribute :t ; type (optional)
-                            (setf type (the string _)))
-                          (optional     ; There can be cells with no value !
-                           (element :v  ; value tag
-                             (text      ; store the value
-                              (setf value (the string _)))))
-                          (funcall column-process-function row-index col-index value type style)
-                          ))))
-                    ;; end row
-                    (funcall row-end-function row-index)
-                    )))))))
-        ;; store last stream position, for future usage
-        (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
+                 (type (or cons null) row-cons col-cons cell-attributes cell-value-cons)
+                 (type (or string null) style type value row-index-str))
+        
+        (block process
+          (prog ((builder (cxml-xmls:make-xmls-builder :include-default-values nil
+                                                       :include-namespace-uri nil )))
+           l_row
+             ;; find the row start
+             (klacks:find-element source "row")
+                                        ; serialize the whole row (all columns)
+             (setf row-cons (klacks:serialize-element source builder))
+             ;; pop "row" label and "row" attributes, read "row" attributes in particular the row...
+             (pop row-cons)
+             (setf row-index-str (the (or string null)
+                                      (car (cdr (assoc "r" (pop row-cons) :test #'string= )))))
+             (when row-index-str
+               (setf row-index (parse-integer row-index-str))
+               (when max-row
+                 (if (> row-index max-row) (return-from process))))
+             ;; skip row if necessary
+             (if (< row-index initial-row)
+                 (go l_row))
+             (funcall row-begin-function row-index)
+             ;; iterate over each col-cons, all left is columns
+           l_column
+             ;; clear values
+             (setf style nil
+                   value nil
+                   type nil
+                   col-index 0)
+             (incf col-index)
+             (setf col-cons (cdr (pop row-cons))) ; column info, like  (("t" "s") ("s" "3") ("r" "A6")) ("v" NIL "18"))
+             ;; skip column if not in column-list 
+             (unless (and column-list
+                          (not (member col-index column-list)))           
+               (setf cell-attributes (car col-cons)) ; ("t" "s") ("s" "3") ("r" "A6")
+               (setf cell-value-cons (second col-cons)) ; ("v" NIL "18")
+               ;; we process the attributes t and s
+               (setf style (second (assoc "s" cell-attributes :test #'string=)))
+               (setf type  (second (assoc "t" cell-attributes :test #'string=)))
+               ;; now we get the value cons
+               (when cell-value-cons ; sometimes there will be no value...
+                 (setf value (third cell-value-cons)))
+               ;; call function for processing all this cell
+               (funcall column-process-function row-index col-index value type style))
+             ;; if there are rows in row-cons, we repeat for the next column info
+             (if (not (null row-cons)) (go l_column))
+           l_rowend
+             ;; end of row
+             (funcall row-end-function row-index)
+             ;; go to next row. EOF should terminate all this.
+             (go l_row)))
         (funcall final-function)
         ))))
+
+;; Old version that uses cl-xmlspam
+;; (defun %%process-sheet (sheet-struct
+;;                         &key
+;;                           row-begin-function
+;;                           column-process-function
+;;                           row-end-function
+;;                           final-function
+;;                           (max-row nil)
+;;                           (initial-row 1)
+;;                           (column-list nil))  ; get only selected columns (list of indexes)
+;;                           ;(initial-stream-position nil) 
+                          
+;;   "Generalized Process sheet (as struct)"
+;;   (declare (type sheet sheet-struct)
+;;            (type fixnum initial-row max-row)
+;;            (type function row-begin-function
+;;                  column-process-function
+;;                  row-end-function
+;;                  final-function)
+;;            (type (or cons null) column-list))
+;;   (let ((filename (sheet-file-name sheet-struct)))
+;;     (with-open-file (str-utf filename :direction :input
+;;                                       ;; SBCL implementation dependent?
+;;                                       :external-format '(:utf-8 :replacement #\?)
+;;                                       :element-type *element-type*)
+;;       ;; if a stream position has been specified, advance (seek) to such position
+;;       ; (when initial-stream-position (file-position str-utf initial-stream-position))
+;;       ;; do stuff with cl-xmlspam library
+;;       (let ((style nil)
+;;             (value nil)
+;;             (type "")
+;;             (col-index 0)
+;;             (row-index 0))
+;;         (declare (type fixnum col-index row-index)
+;;                  (type string type)
+;;                  (type (or string null) style value))
+;;         (with-xspam-source str-utf
+;;           (block process
+;;             (element |sheetData|
+;;               (group
+;;                (one-or-more
+;;                 (element :row
+;;                   ;; a row -- start row processing
+;;                   (attribute :r         ; row number
+;;                     (setf row-index (parse-integer (the string _)))
+;;                     ;; exit if max-row has been reached
+;;                     (when max-row
+;;                       (if (> row-index max-row) (return-from process))))
+;;                   (when (>= row-index initial-row)
+;;                     ;; clear row values
+;;                     (setf style nil
+;;                           value nil
+;;                           type ""
+;;                           col-index 0)
+;;                     (funcall row-begin-function row-index)
+;;                     (group
+;;                      (one-or-more       ; zero or more?
+;;                       (element :c
+;;                         ;;  a column -- start column procesing
+;;                         (incf col-index)
+;;                         ;; skip this column if index not in the (optional) column list
+;;                         (unless (and column-list
+;;                                      (not (member col-index column-list)))
+;;                           (optional-attribute :s ; style (optional)
+;;                             (setf style (the string _)))
+;;                           (optional-attribute :t ; type (optional)
+;;                             (setf type (the string _)))
+;;                           (optional     ; There can be cells with no value !
+;;                            (element :v  ; value tag
+;;                              (text      ; store the value
+;;                               (setf value (the string _)))))
+;;                           (funcall column-process-function row-index col-index value type style)
+;;                           ))))
+;;                     ;; end row
+;;                     (funcall row-end-function row-index)
+;;                     )))))))
+;;         ;; store last stream position, for future usage
+;;         (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
+;;         (funcall final-function)
+;;         ))))
 
 (defun process-sheet (sheet-struct &key (max-row nil)
                                         (initial-row 1)
@@ -287,7 +380,7 @@
   * column-list receives a list of column numbers, so only those columns are fetched. First column = 1.
   * row-function receives a lambda where it gets passed, as an argument, the row's column values (as a list).
                  This can be used, for example, for uploading each row to a DB, etc. 
-                 If row-function is defined, then the row values will not be returned by process-sheet.
+                 If row-function is defined, then <the row values will not be returned by process-sheet.
 "
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
@@ -477,3 +570,4 @@
 ;; --test
 ;;(defparameter *f* "C:\\Users\\fegoavil010\\Documents\\archivos bulk\\GOOD_YEAR\\kardex\\temp.xlsx" )
 
+           

@@ -75,10 +75,10 @@ To do useful stuff, you would create a function that will process each row and d
 
 ## Uses
 
-* cl-xmlspam (download a copy from my GitHub)
+* CXML (Closure-XML)
 * ZIP (xlsx files are zipped)
 * xmls
-* uiop (
+* uiop 
 
 ## Installation
 

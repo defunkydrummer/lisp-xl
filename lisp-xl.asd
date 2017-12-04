@@ -10,7 +10,8 @@
   :depends-on (:zip
                ;:babel
                ;:babel-streams
-               :cl-xmlspam
+               ; :cl-xmlspam
+               :cxml 
                :uiop
                :xmls)
   :components ((:module "src"
