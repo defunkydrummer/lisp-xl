@@ -83,7 +83,7 @@ To do useful stuff, you would create a function that will process each row and d
 ## Installation
 
 For CL newbies (welcome!): 
-Make sure you have the cl-xmlspam library downloaded; you can copy it to quicklisp's "local-projects" directory. 
+
 Download lisp-xl, copy to "local-projects", then use quicklisp to load the rest of the required libs and compile:
 
 ```common-lisp
