@@ -12,7 +12,7 @@
 (in-package :lisp-xl)
 
 ;; --- NOTE: to be reviewed...
-(declaim (optimize (speed 3) (debug 0) (safety 0)))
+(declaim (optimize (speed 3) (debug 0) (safety 0) (space 0)))
 
 ;; From Carlos Ungil
 (defun %get-date-formats (number-formats)
@@ -27,12 +27,12 @@
         collect is-date))
 
 ;; From Carlos Ungil
-(defun %excel-date (int)
-  "Decode the excel date values into something we can parse."
-  (declare (type fixnum int))
-  (the string 
-       (apply #'format nil "~D-~2,'0D-~2,'0D"
-              (reverse (subseq (multiple-value-list (decode-universal-time (* 24 60 60 (- int 2)))) 3 6)))))
+;; (defun %excel-date (int)
+;;   "Decode the excel date values into something we can parse."
+;;   (declare (type fixnum int))
+;;   (the string 
+;;        (apply #'format nil "~D-~2,'0D-~2,'0D"
+;;               (reverse (subseq (multiple-value-list (decode-universal-time (* 24 60 60 (- int 2)))) 3 6)))))
 
 ;; valid format types
 (defparameter *formats*
@@ -95,7 +95,15 @@
     vector
     ))
   
-
+;; speedups for %read-col
+(declaim (ftype (function ((or string null ) ;value
+                                             (or string null ) ;type
+                                             (or string null ) ; style
+                                             (vector string) ; unique-strings
+                                             (simple-array fixnum)) t) ; decision vector
+                %read-col))
+;; inlining
+(declaim (inline %read-col))
 (defun %read-col (value type style unique-strings decision-vector)
   "Inner function for reading(parsing) a column"
   (declare (type (or string null) value style type)
@@ -116,7 +124,8 @@
                    ;; number 
                    (eq decision *decision-parse-number*) (read-from-string value)
                    ;; else - read string from table
-                   (aref unique-strings (the fixnum (parse-integer value)))))))
+                   (aref (the (vector string) unique-strings)
+                         (the fixnum (parse-integer value)))))))
               ;; date, etc
               ;; for now, we try the lisp reader
               (t (read-from-string value))) 
@@ -212,8 +221,9 @@
   "Generalized Process sheet (as struct)"
   (declare (type sheet sheet-struct)
            (type fixnum initial-row max-row)
+           (type (function (fixnum fixnum (or string null) (or string null)(or string null)) (or cons null)) 
+                  column-process-function)
            (type function row-begin-function
-                 column-process-function
                  row-end-function
                  final-function)
            (type (or cons null) column-list))
@@ -239,9 +249,13 @@
                                                        :include-namespace-uri nil )))
            l_row
              ;; find the row start
-             (klacks:find-element source "row")
+             (handler-case
+                 (prog ()
+                    (klacks:find-element source "row")
                                         ; serialize the whole row (all columns)
-             (setf row-cons (klacks:serialize-element source builder))
+                    (setf row-cons (klacks:serialize-element source builder)))
+               (error ()
+                 (go l_finish)))        ;like handling EOF, basically
              ;; pop "row" label and "row" attributes, read "row" attributes in particular the row...
              (pop row-cons)
              (setf row-index-str (the (or string null)
@@ -249,18 +263,18 @@
              (when row-index-str
                (setf row-index (parse-integer row-index-str))
                (when max-row
-                 (if (> row-index max-row) (return-from process))))
+                 (if (> row-index max-row) (go l_finish))))
              ;; skip row if necessary
              (if (< row-index initial-row)
                  (go l_row))
              (funcall row-begin-function row-index)
              ;; iterate over each col-cons, all left is columns
+             (setf col-index 0)
            l_column
              ;; clear values
              (setf style nil
                    value nil
-                   type nil
-                   col-index 0)
+                   type nil)
              (incf col-index)
              (setf col-cons (cdr (pop row-cons))) ; column info, like  (("t" "s") ("s" "3") ("r" "A6")) ("v" NIL "18"))
              ;; skip column if not in column-list 
@@ -282,8 +296,12 @@
              ;; end of row
              (funcall row-end-function row-index)
              ;; go to next row. EOF should terminate all this.
-             (go l_row)))
-        (funcall final-function)
+             (go l_row)
+           l_finish
+             ;; end of file. Return from block the value obtained by final-function.
+             (return-from process (funcall final-function))
+             ))
+        
         ))))
 
 ;; Old version that uses cl-xmlspam
@@ -366,6 +384,8 @@
 ;;         (setf (sheet-last-stream-position sheet-struct) (file-position str-utf))
 ;;         (funcall final-function)
 ;;         ))))
+
+
 
 (defun process-sheet (sheet-struct &key (max-row nil)
                                         (initial-row 1)
@@ -480,7 +500,7 @@
              (setf blank-row T))        ; reset blank value (row) flag
                                        
            (column-process-function (row-index col-index value type style)
-             (declare (type fixnum col-index)
+             (declare (type fixnum row-index col-index)
                       (type (or string null) value type style ))
              ;; compare style, type  for this column, versus previous.
         
