@@ -1,11 +1,3 @@
-(in-package :cl-user)
-(defpackage :lisp-xl.metadata
-  (:use #:cl)
-  (:export #:get-entry
-           #:list-sheets
-           #:get-unique-strings-vector
-           #:get-number-formats
-           ))
 (in-package :lisp-xl.metadata)
 
 (declaim (optimize (speed 3) (debug 0) (safety 0)))
@@ -60,6 +52,27 @@
                     (cons fmt-id (if (< fmt-id 164)
                                      :built-in
                                      (cdr (assoc fmt-id format-codes))))))))
+
+;; From Carlos Ungil
+(defun %get-date-formats (number-formats)
+  "Filter (obtain) which formats are Date formats, from the number-formats list"
+  (loop for f in number-formats
+        for id = (the fixnum (car f))
+        for fmt = (cdr f)
+        for is-date = 
+        (or (<= 14 id 17) ;; built-in: m/d/yyyy d-mmm-yy d-mmm mmm-yy
+            (and (stringp fmt) (not (search "h" fmt)) (not (search "s" fmt))
+                 (search "d" fmt) (search "m" fmt) (search "y" fmt)))
+        collect is-date))
+
+;; From Carlos Ungil
+;; (defun %excel-date (int)
+;;   "Decode the excel date values into something we can parse."
+;;   (declare (type fixnum int))
+;;   (the string 
+;;        (apply #'format nil "~D-~2,'0D-~2,'0D"
+;;               (reverse (subseq (multiple-value-list (decode-universal-time (* 24 60 60 (- int 2)))) 3 6)))))
+
 
 ;; From Carlos Ungil
 (defun list-sheets (file)

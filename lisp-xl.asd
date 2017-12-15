@@ -8,15 +8,14 @@
   :author "Flavio Egoavil"
   :license "MIT license"
   :depends-on (:zip
-               ;:babel
-               ;:babel-streams
-               ; :cl-xmlspam
                :cxml 
                :uiop
                :xmls)
   :components ((:module "src"
                 :components
-                ((:file "metadata")
+                ((:file "package")
+                 (:file "metadata")
+                 (:file "col-process")
                  (:file "main"))))
   :description "Read Microsoft XLSX files using Common Lisp"
   :long-description
