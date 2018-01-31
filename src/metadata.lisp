@@ -88,3 +88,11 @@
           collect (list (parse-integer sheet-id)
                         sheet-name 
                         (cdr (assoc sheet-rel rels :test #'string=))))))
+
+(defun list-sheet-indexes (file)
+  "List all valid indexes for the sheet, in order of appereance"
+  (mapcar #'car (list-sheets file)))
+
+(defun sheet-name (file index)
+  "Obtain the name (string) of the specific sheet."
+  (second (assoc index (list-sheets file))))

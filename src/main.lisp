@@ -74,7 +74,18 @@
   "Open excel sheet, and execute body. Sheet struct is bound to sheet-symbol"
   `(let ((,sheet-symbol (read-sheet ,pathname ,sheet-index :silent ,silent)))
       (unwind-protect (progn ,@body))
-      (close-sheet ,sheet-symbol)))
+     (close-sheet ,sheet-symbol)))
+
+;; similar but uses all sheets
+(defmacro with-all-excel-sheets ((pathname sheet-symbol index-symbol name-symbol &optional (silent T)) &body body)
+  "For every sheet in excel file, execute body. Sheet struct is bound to sheet-symbol.
+   Sheet index is bound to index-symbol.
+   Sheet name is bound to name-symbol"
+  `(loop for ,index-symbol in (list-sheet-indexes ,pathname)
+         for ,name-symbol = (sheet-name ,pathname ,index-symbol)
+         do
+         (with-open-excel-sheet (,pathname ,index-symbol ,sheet-symbol ,silent)
+           ,@body)))
 
 
 ;; NOTE: New version, uses klacks instead of cl-xmlspam

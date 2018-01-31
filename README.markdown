@@ -73,6 +73,16 @@ To do useful stuff, you would create a function that will process each row and d
              (process-sheet sheet :max-row 10 :initial-row 2 :row-function #'f)))
 ```
 
+Or you can work on all the sheets in the file. For example here we run the 'report' on all sheets: 
+
+```common-lisp
+
+(with-all-excel-sheets (file sh index name) ;bind sheet index and name 
+    (format t "~% Reporting on sheet ~A ~%" name)
+    (report-cells-type-change sh :initial-row 2 :column-list column-list ))
+    
+```
+
 ### CSV Export
 
 CSV Export is very simple, see csv-export.lisp for an example (using cl-csv). 
