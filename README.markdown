@@ -69,9 +69,13 @@ To do useful stuff, you would create a function that will process each row and d
            ;; our "useful" function that will process each row
            (flet ((f (row) 
                     (print row)))
-             ;; call #'f at each row
-             (process-sheet sheet :max-row 10 :row-function #'f)))
+             ;; call #'f at each row, skip first row
+             (process-sheet sheet :max-row 10 :initial-row 2 :row-function #'f)))
 ```
+
+### CSV Export
+
+CSV Export is very simple, see csv-export.lisp for an example (using cl-csv). 
 
 ## Uses
 
@@ -89,6 +93,9 @@ Download lisp-xl, copy to "local-projects", then use quicklisp to load the rest 
 ```common-lisp
 (ql:quickload :lisp-xl)
 ```
+## Author
+
+Flavio Egoavil (f_egoavil at microsoft's ancient, high temperature mail system.)
 
 ## Acknowledgements
 
