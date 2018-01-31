@@ -41,6 +41,9 @@
 (defparameter *decision-parse-string* 0)
 (defparameter *decision-parse-number* 1)
 (defparameter *decision-try-lisp-reader* 2)
+;; default decision if 'style' not available
+(defparameter *decision-default* *decision-parse-string*)
+
 (defparameter *expected-number-formats-max-size* 512)
 
 (defun %get-col-parse-decisions-vector (date-formats number-formats)
@@ -72,14 +75,17 @@
                 %read-col))
 ;; inlining
 (declaim (inline %read-col))
+;;(declaim (notinline %read-col))
 (defun %read-col (value type style unique-strings decision-vector)
   "Inner function for reading(parsing) a column"
   (declare (type (or string null) value style type)
            (type (vector string) unique-strings)
            (type (simple-array fixnum) decision-vector))
-  (let* ((nstyle (the fixnum (parse-integer style)))
-         (decision (aref decision-vector nstyle)))
-    (declare (type fixnum nstyle decision))
+  (let ((decision ; decision of the decision-vector
+          (if (null style)
+              *decision-default* ;default decision if no style 
+              (aref decision-vector (parse-integer style)))))
+    (declare (type fixnum decision))
     (handler-case 
         (cond ((null value) nil) ; value is nil (case for blank cells)
               ;; ((string= type "e") (intern value "KEYWORD"))

@@ -299,7 +299,8 @@
              ;; detect blank values - set to T if all row is blank or blank strings
              (setf blank-row (and blank-row
                                   (or (null value) (eq 0 (length value)))))
-             (let* ((fmt-id (car (elt number-formats (parse-integer style))))
+             (let* ((fmt-id (car (elt number-formats
+                                      (parse-integer (if (null style) "0" style)))))
                     (format-keyword (%get-format-type fmt-id))
                     (cinfo (cdr (assoc col-index info)))
                     (equal?
