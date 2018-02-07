@@ -1,7 +1,5 @@
 # lisp-xl
 
-* Work in progress, but you can try it already... 
-
 Common Lisp Library for working with  Microsoft Excel XLSX files, for example for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
 
 It does *not* load the whole file into RAM, thus, processing large files is possible.
@@ -93,6 +91,15 @@ CSV Export is very simple, see csv-export.lisp for an example (using cl-csv).
 * ZIP (xlsx files are zipped)
 * xmls
 * uiop 
+
+## Caveats
+
+The software is still work in progress, it works, but for example there are some issues: 
+
+* Date fields are still untested (won't be so difficult to make them work, though)
+* Custom format fields might not be imported correctly (again, shouldn't be so hard to make them work). 
+
+The code itself could have been implemented in a much shorter and simple way, however with lower performance. Performance was one of my main concerns. A current performance bottleneck is the ZIP expansion of the XLSX file. The "deflate" function used is IMO slow and could be reimplemented. 
 
 ## Installation
 
