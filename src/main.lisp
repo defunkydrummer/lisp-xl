@@ -132,6 +132,11 @@
           (prog ((builder (cxml-xmls:make-xmls-builder :include-default-values nil
                                                        :include-namespace-uri nil )))
            l_row
+             ;; --------- GC at every 50000 rows, what a shame...-----
+             ;; to be reviewed! it seems KLACKS is consing too much. 
+             #+sbcl(if (eql (mod row-index 50000) 0)
+                       (sb-ext:gc))
+             ;; ------------------------------------------------------
              ;; find the row start
              (handler-case
                  (prog ()
