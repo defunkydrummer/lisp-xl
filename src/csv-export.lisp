@@ -12,8 +12,17 @@
   (cl-csv:write-csv-row
      row-data :stream str ))
 
+
+(defun rename-to-csv (file)
+  "Obtain renamed file appending .csv extension to original file"
+  (format nil "~A.csv" (uiop:physicalize-pathname file)))
+
 (defun excel-to-csv (in-file out-file sheet-index &key (initial-row 1) (max-row nil) (silent T))
-  "Convert XLSX file to CSV file."
+  "Convert XLSX file to CSV file. 
+Null for out file: rename in-file
+Null for sheet-index: use first sheet."
+  (when (null out-file)
+    (setf out-file (rename-to-csv in-file)))
   (with-open-file (str out-file :direction :output :if-exists :error
                        :if-does-not-exist :create)
     
@@ -27,4 +36,3 @@
                        :max-row max-row
                        :silent silent
                        :row-function #'writer)))))
-
