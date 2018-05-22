@@ -1,6 +1,7 @@
 (in-package :cl-user)
 (defpackage :lisp-xl-csv
-  (:use #:cl :lisp-xl :cl-csv))
+  (:use #:cl :lisp-xl :cl-csv)
+  (:export :excel-to-csv))
 (in-package :lisp-xl-csv)
 
 ;; Simple example on how to create a CSV based on the XLSX.
@@ -13,7 +14,8 @@
 
 (defun excel-to-csv (in-file out-file sheet-index &key (initial-row 1) (max-row nil) (silent T))
   "Convert XLSX file to CSV file."
-  (with-open-file (str out-file :direction :output :if-exists :overwrite)
+  (with-open-file (str out-file :direction :output :if-exists :error
+                       :if-does-not-exist :create)
     
     (flet ((writer (row-data)
              (declare (type cons row-data))

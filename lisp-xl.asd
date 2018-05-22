@@ -10,13 +10,16 @@
   :depends-on (:zip
                :cxml 
                :uiop
-               :xmls)
+               :xmls
+               :cl-csv)
   :components ((:module "src"
+                :serial t
                 :components
                 ((:file "package")
                  (:file "metadata")
                  (:file "col-process")
-                 (:file "main"))))
+                 (:file "main")
+                 (:file "csv-export"))))
   :description "Read Microsoft XLSX files using Common Lisp"
   :long-description
   #.(with-open-file (stream (merge-pathnames
