@@ -3,6 +3,8 @@
 ;; --- NOTE: to be reviewed...
 (declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
 
+;; --- NOTE: to be reviewed as well... memory problem  ----
+(defparameter *gc-every-x-rows* 10000)
 
 (defparameter *element-type* '(unsigned-byte 8))
 
@@ -134,7 +136,7 @@
            l_row
              ;; --------- GC at every 50000 rows, what a shame...-----
              ;; to be reviewed! it seems KLACKS is consing too much. 
-             #+sbcl(if (eql (mod row-index 50000) 0)
+             #+sbcl(if (eql (mod row-index *gc-every-x-rows*) 0)
                        (sb-ext:gc))
              ;; ------------------------------------------------------
              ;; find the row start
