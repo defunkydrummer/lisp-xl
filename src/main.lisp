@@ -1,8 +1,10 @@
 (in-package :lisp-xl)
 
 ;; --- NOTE: to be reviewed...
-(declaim (optimize (speed 3) (debug 0) (safety 0) (space 0)))
+(declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
 
+;; --- NOTE: to be reviewed as well... memory problem  ----
+(defparameter *gc-every-x-rows* 10000)
 
 (defparameter *element-type* '(unsigned-byte 8))
 
@@ -103,7 +105,8 @@
   
   "Generalized Process sheet (as struct)"
   (declare (type sheet sheet-struct)
-           (type fixnum initial-row max-row)
+           (type fixnum initial-row)
+           (type (or null fixnum) max-row)
            (type (function (fixnum fixnum (or string null) (or string null)(or string null)) (or cons null)) 
                   column-process-function)
            (type function row-begin-function
@@ -131,6 +134,11 @@
           (prog ((builder (cxml-xmls:make-xmls-builder :include-default-values nil
                                                        :include-namespace-uri nil )))
            l_row
+             ;; --------- GC at every 50000 rows, what a shame...-----
+             ;; to be reviewed! it seems KLACKS is consing too much. 
+             #+sbcl(if (eql (mod row-index *gc-every-x-rows*) 0)
+                       (sb-ext:gc))
+             ;; ------------------------------------------------------
              ;; find the row start
              (handler-case
                  (prog ()
@@ -206,7 +214,8 @@
                  If row-function is defined, then <the row values will not be returned by process-sheet.
 "
   (declare (type sheet sheet-struct)
-           (type fixnum initial-row max-row)
+           (type fixnum initial-row)
+           (type (or fixnum null) max-row)
            (type boolean silent debug-print)
            (type (or cons null) column-list)
            (type (or (function (cons)) null) row-function))
@@ -288,7 +297,8 @@
                                                    (column-list nil)) ;; get only selected columns (list of indexes)
   "Inspect how cell type changes from row to row. Returns number of changes."
   (declare (type sheet sheet-struct)
-           (type fixnum initial-row max-row)
+           (type fixnum initial-row)
+           (type (or null fixnum) max-row)
            (type (or cons null) column-list))
   (let* ((number-formats (sheet-number-formats sheet-struct))
          (info nil)

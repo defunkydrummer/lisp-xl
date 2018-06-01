@@ -1,9 +1,9 @@
 (in-package :lisp-xl.metadata)
 
-(declaim (optimize (speed 3) (debug 0) (safety 0)))
+(declaim (optimize (speed 1) (debug 3) (safety 3)))
 
 ;; number of entries for unique-strings to be allocated initially.- 
-(defparameter *initial-unique-strings-array-size* 8192) 
+(defparameter *initial-unique-strings-array-size* 200000) 
 
 ;; From Carlos Ungil
 (defun get-entry (name zip)
@@ -29,10 +29,11 @@
                                                                 :adjustable T)))
     (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
           for x = (xmls:xmlrep-find-child-tag :t str)
-          do (vector-push-extend (the string
-                                      (cond ((equal (second x) '(("space" "preserve"))) " ")
-                                            ((xmls:xmlrep-children x) (xmls:xmlrep-string-child x))))
-                                 vector *initial-unique-strings-array-size*  )) ;enlarge array in a big way
+          do (vector-push-extend
+              (the string
+                   (cond ((equal (xmls:node-attrs x) '(("space" "preserve"))) " ")
+                         ((xmls:xmlrep-children x) (xmls:xmlrep-string-child x))))
+              vector *initial-unique-strings-array-size*  )) ;enlarge array in a big way
     vector))
 
 ;; From Carlos Ungil
@@ -40,18 +41,31 @@
 (defun get-number-formats (zip)
   "Retrieves number formats from the 'styles' xml file, which contains style info for the
   excel file."
-  (let ((format-codes (loop for fmt in (xmls:xmlrep-find-child-tags
-					:numFmt (xmls:xmlrep-find-child-tag
-						 :numFmts (get-entry "xl/styles.xml" zip) nil))
-                            collect (cons (parse-integer (xmls:xmlrep-attrib-value "numFmtId" fmt))
-                                          (xmls:xmlrep-attrib-value "formatCode" fmt)))))
-    (loop for style in (xmls:xmlrep-find-child-tags
-			:xf (xmls:xmlrep-find-child-tag
-			     :cellXfs (get-entry "xl/styles.xml" zip)))
-          collect (let ((fmt-id (parse-integer (xmls:xmlrep-attrib-value "numFmtId" style))))
-                    (cons fmt-id (if (< fmt-id 164)
-                                     :built-in
-                                     (cdr (assoc fmt-id format-codes))))))))
+  (prog (style-file numfmts numfmt)
+     (setf style-file (get-entry "xl/styles.xml" zip))
+     (and style-file (setf numfmts
+                           (xmls:xmlrep-find-child-tag
+                            :numFmts
+                            style-file nil)))
+     (and numfmts (setf numfmt
+                        (xmls:xmlrep-find-child-tags
+                         :numFmt
+                         numfmts)))
+     (unless numfmts
+       ;; no number format information
+       (format t "Lisp-xl warning: File has no number format information. Proceed with caution ~%")
+       ;; return the empty list
+       nil)
+     (let ((format-codes (loop for fmt in numfmts
+                               collect (cons (parse-integer (xmls:xmlrep-attrib-value "numFmtId" fmt))
+                                             (xmls:xmlrep-attrib-value "formatCode" fmt)))))
+       (loop for style in (xmls:xmlrep-find-child-tags
+                           :xf (xmls:xmlrep-find-child-tag
+                                :cellXfs (get-entry "xl/styles.xml" zip)))
+             collect (let ((fmt-id (parse-integer (xmls:xmlrep-attrib-value "numFmtId" style))))
+                       (cons fmt-id (if (< fmt-id 164)
+                                        :built-in
+                                        (cdr (assoc fmt-id format-codes)))))))))
 
 ;; From Carlos Ungil
 (defun %get-date-formats (number-formats)
