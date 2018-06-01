@@ -31,8 +31,8 @@
   'Sheet' must be an index, or sheet name. Nil for first sheet."
   (let* ((sheet-struct (make-sheet))
          (sheets (list-sheets file))
-	 (entry-name (cond ((and (null sheet) (= 1 (length sheets)))
-			    (third (first sheets)))
+	 (entry-name (cond ((and (null sheet))
+			    (third (first sheets))) ;path to first sheet
 			   ((stringp sheet)
 			    (third (find sheet sheets :key #'second :test #'string=)))
 			   ((numberp sheet)
