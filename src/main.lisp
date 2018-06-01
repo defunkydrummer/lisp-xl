@@ -1,9 +1,9 @@
 (in-package :lisp-xl)
 
 ;; --- NOTE: to be reviewed...
-(declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
+;;(declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
 
-;; --- NOTE: to be reviewed as well... memory problem  ----
+;; --- NOTE: to be reviewed as well...  ----
 (defparameter *gc-every-x-rows* 10000)
 
 (defparameter *element-type* '(unsigned-byte 8))
@@ -74,9 +74,13 @@
 
 (defmacro with-open-excel-sheet ((pathname sheet-index sheet-symbol &optional (silent T)) &body body)
   "Open excel sheet, and execute body. Sheet struct is bound to sheet-symbol"
-  `(let ((,sheet-symbol (read-sheet ,pathname ,sheet-index :silent ,silent)))
-      (unwind-protect (progn ,@body))
-     (close-sheet ,sheet-symbol)))
+  (let ((result-var (gensym "result-")))
+    `(let* ((,sheet-symbol (read-sheet ,pathname ,sheet-index :silent ,silent))
+            (,result-var
+              (unwind-protect
+                   (progn ,@body))))
+       (close-sheet ,sheet-symbol)
+       ,result-var)))
 
 ;; similar but uses all sheets
 (defmacro with-all-excel-sheets ((pathname sheet-symbol index-symbol name-symbol &optional (silent T)) &body body)
