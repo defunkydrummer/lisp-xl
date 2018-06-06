@@ -245,11 +245,18 @@
                     (type (or string null) value type style ))
            (when debug-print (format t "|~D " col-index))
            ;; log format ID, type and value
-           (when debug-print (format t "(~D,~A,~A) "
-                                     ;; number format type ID 
-                                     (car (elt number-formats (parse-integer style)))
-                                     type
-                                     value))
+           (when debug-print
+             (if style
+                 (format t "(number-format: ~D [style=~D],~A,~A) "
+                         ;; number format type ID 
+                         (car (elt number-formats (parse-integer style)))
+                         style
+                         type
+                         value)
+                 (format t "(NULL STYLE,~A,~A) "
+                         ;; number format type ID 
+                         type
+                         value)))
            ;; store column value
            (push (%read-col value
                             type

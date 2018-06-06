@@ -2,7 +2,7 @@
 
 Common Lisp Library for working with  Microsoft Excel XLSX files, for example for ETL (extract-transform-load) and data cleansing purposes. This library is geared for working with large files (i.e. 100MB excel files).
 
-It does *not* load the whole file into RAM, thus, processing large files is possible.
+It does *not* load the whole file into RAM, thus, processing large files is possible. However, be careful with files that contain a lot of "unique strings" (strings that do not repeat frequently on the file), for they need to be loaded onto RAM. 
 
 ## Reason for being
 
@@ -20,8 +20,8 @@ You can use the (report-cells-type-change) function to take a look at the presen
 
 ## TODO
 
-* Parsing of date values correctly
-* Free burger for each user
+* Parse numbers and dates correctly. Currently, it will not attempt to parse most numbers and dates, but return them as strings.
+* Performance improvements.
 
 ## Usage
 
@@ -96,10 +96,9 @@ CSV Export is very simple, see csv-export.lisp for an example (using cl-csv).
 
 The software is still work in progress, it works, but for example there are some issues: 
 
-* Date fields are still untested (won't be so difficult to make them work, though)
-* Custom format fields might not be imported correctly (again, shouldn't be so hard to make them work). 
+* See TODO.
 
-The code itself could have been implemented in a much shorter and simple way, however with lower performance. Performance was one of my main concerns. A current performance bottleneck is the ZIP expansion of the XLSX file. The "deflate" function used is IMO slow and could be reimplemented. 
+The code itself could have been implemented in a much shorter and simple way, however with lower performance. Performance is still one of my main concerns. A current performance bottleneck is the ZIP expansion of the XLSX file. The "deflate" function used is IMO slow and could be reimplemented. 
 
 ## Installation
 

@@ -1,6 +1,6 @@
 (in-package :lisp-xl)
 
-(declaim (optimize (speed 3) (debug 0) (safety 0) (space 0)))
+;(declaim (optimize (speed 3) (debug 0) (safety 0) (space 0)))
 
 ;; valid format types
 (defparameter *formats*
@@ -56,11 +56,13 @@
           for format-id = (car nf)
           for format-type = (%get-format-type format-id)
           
-          for decision = (cond
-                           ((equal format-type :string) *decision-parse-string*)
-                           ((member format-type *number-formats*) *decision-parse-number*)
-                           ((member format-type *unsupported-formats*) *decision-try-lisp-reader*)
-                           (t *decision-try-lisp-reader*)) ; note! 
+          for decision =
+          (cond
+            ((equal format-type :string) *decision-parse-string*)
+            ((member format-type *number-formats*) *decision-parse-number*)
+            ;; unsupported format: return string.
+            ((member format-type *unsupported-formats*) *decision-parse-string*)
+            (t *decision-try-lisp-reader*)) ; note! 
           do (setf (aref vector vector-index) decision)
              (incf vector-index))
     vector
@@ -95,13 +97,13 @@
                  ;; string from the 'unique-strings' file?
                  ((string= type "s")
                   (if
-                   ;; number 
+                   ;; number?
                    (eq decision *decision-parse-number*) (read-from-string value)
                    ;; else - read string from table
                    (aref (the (vector string) unique-strings)
                          (the fixnum (parse-integer value)))))))
               ;; date, etc
-              ;; for now, we try the lisp reader
-              (t (read-from-string value))) 
+              ;; return as string!
+              (t value)) 
       (error () "PARSE ERROR") ; return "ERROR" if parse errors were found
       )))
