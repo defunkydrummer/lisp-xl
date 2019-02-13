@@ -4,7 +4,7 @@
 ;;(declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
 
 ;; --- NOTE: to be reviewed as well...  ----
-;;(defparameter *gc-every-x-rows* 10000)
+(defparameter *gc-every-x-rows* 10000)
 
 (defparameter *element-type* '(unsigned-byte 8))
 

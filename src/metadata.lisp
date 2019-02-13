@@ -2,8 +2,9 @@
 
 ;;(declaim (optimize (speed 1) (debug 3) (safety 3)))
 
-;; number of entries for unique-strings to be allocated initially.- 
-(defparameter *initial-unique-strings-array-size* 200000) 
+;; number of entries for unique-strings to be allocated initially.-
+;; used each time we do vector-push-extend on the unique strings table.
+(defparameter *initial-unique-strings-array-size* 1000) 
 
 ;; From Carlos Ungil
 (defun get-entry (name zip)
@@ -29,11 +30,16 @@
                                                                 :adjustable T)))
     (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
           for x = (xmls:xmlrep-find-child-tag :t str)
-          do (vector-push-extend
-              (the string
-                   (cond ((equal (xmls:node-attrs x) '(("space" "preserve"))) " ")
-                         ((xmls:xmlrep-children x) (xmls:xmlrep-string-child x))))
-              vector *initial-unique-strings-array-size*  )) ;enlarge array in a big way
+          do
+          (cond ((equal (xmls:node-attrs x) '(("space" "preserve")))
+                 (vector-push-extend " "
+                                     vector *initial-unique-strings-array-size*))
+                ((xmls:xmlrep-children x)
+                 (vector-push-extend (xmls:xmlrep-string-child x)
+                                     vector *initial-unique-strings-array-size*))
+                (t (format t "Warning: Strange entry on unique strings? ~A" x)
+                   (vector-push-extend " "
+                                       vector *initial-unique-strings-array-size*))))
     vector))
 
 ;; From Carlos Ungil

@@ -2,7 +2,8 @@
 (defpackage :lisp-xl-csv
   (:use #:cl :lisp-xl :cl-csv
         :lisp-xl.util)
-  (:export :excel-to-csv))
+  (:export :excel-to-csv
+   :files-to-csv ))
 (in-package :lisp-xl-csv)
 
 ;; Simple example on how to create a CSV based on the XLSX.
@@ -40,3 +41,24 @@ Note: Strings with CR or LF will have them replaced by spaces."
                        :max-row max-row
                        :silent silent
                        :row-function #'writer)))))
+
+(defun files-to-csv (files &key output-format
+                                remove-header-butfirst)
+  "Convert all files(assumed excel files) to CSV.
+remove-header-butfirst: strip the header in all files except the first.
+Processes only the first sheet of each file."
+  (when remove-header-butfirst
+    (format t "Note: First file will keep its header: ~A~%" (first files)))
+  (loop for f in files
+        for first = (equal f (first files))
+        do
+        (format t "Processing file: ~A~%" f)
+        (excel-to-csv f nil 1
+                      :initial-row
+                      (if (and remove-header-butfirst
+                               (not first))
+                          2 ;;remove header
+                          1)
+                      :output-format output-format)))
+
+
