@@ -4,18 +4,20 @@
 (in-package :lisp-xl-asd)
 
 (defsystem lisp-xl
-  :version "0.2"
+  :version "0.4"
   :author "Flavio Egoavil"
   :license "MIT license"
   :depends-on (:zip
                :cxml 
                :uiop
                :xmls
-               :cl-csv)
+               :cl-csv
+               :cl-ppcre)
   :components ((:module "src"
                 :serial t
                 :components
                 ((:file "package")
+                 (:file "util")
                  (:file "metadata")
                  (:file "col-process")
                  (:file "main")

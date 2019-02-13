@@ -4,7 +4,7 @@
 ;;(declaim (optimize (speed 1) (debug 3) (safety 3) (space 0)))
 
 ;; --- NOTE: to be reviewed as well...  ----
-(defparameter *gc-every-x-rows* 10000)
+;;(defparameter *gc-every-x-rows* 10000)
 
 (defparameter *element-type* '(unsigned-byte 8))
 
@@ -16,8 +16,13 @@
   number-formats
   date-formats 
   file-name ;; temp file name
+  original-file-name
   last-stream-position ;;last stream position read. Unused for now.
   )
+
+(defmethod print-object ((s sheet) stream)
+  (format stream "#<EXCEL SHEET for ~A, ~D unique strings loaded.>" (sheet-original-file-name s)
+          (length (sheet-unique-strings s))))
 
 (defun close-sheet (s)
   "Deletes the in-memory data for the sheet and deletes the temporary file created for it."
@@ -69,6 +74,7 @@
               
               (zip:zipfile-entry-contents entry fstream))
             (setf (sheet-file-name sheet-struct) temp-file-name)
+            (setf (sheet-original-file-name sheet-struct) file)
             sheet-struct
             ))))))
 
@@ -97,32 +103,32 @@
 ;; NOTE: New version, uses klacks instead of cl-xmlspam
 ;; klacks is part of CXML
 (defun %%process-sheet (sheet-struct
-                         &key
-                           row-begin-function
-                           column-process-function
-                           row-end-function
-                           final-function
-                           (max-row nil)
-                           (initial-row 1)
-                           (column-list nil))  ; get only selected columns (list of indexes)
+                        &key
+                          row-begin-function
+                          column-process-function
+                          row-end-function
+                          final-function
+                          (max-row nil)
+                          (initial-row 1)) 
                                         ;(initial-stream-position nil) 
   
   "Generalized Process sheet (as struct)"
   (declare (type sheet sheet-struct)
            (type fixnum initial-row)
            (type (or null fixnum) max-row)
-           (type (function (fixnum fixnum (or string null) (or string null)(or string null)) (or cons null)) 
-                  column-process-function)
+           (type (function (fixnum (or string null) (or string null)(or string null) (or string null))
+                           (or cons null)) 
+                 column-process-function)
            (type function row-begin-function
                  row-end-function
-                 final-function)
-           (type (or cons null) column-list))
+                 final-function))
   (let* ((filename (sheet-file-name sheet-struct))
          (source (cxml:make-source filename)))
     (klacks:with-open-source (klacks-source source)
       (let ((style nil)
             (value nil)
             (type nil)
+            (position nil)
             (col-cons ())
             (row-cons ())
             (cell-attributes ())
@@ -132,7 +138,7 @@
             (row-index-str nil))
         (declare (type fixnum col-index row-index)
                  (type (or cons null) row-cons col-cons cell-attributes cell-value-cons)
-                 (type (or string null) style type value row-index-str))
+                 (type (or string null) style type value position row-index-str))
         
         (block process
           (prog ((builder (cxml-xmls:make-xmls-builder :include-default-values nil
@@ -165,26 +171,27 @@
              (funcall row-begin-function row-index)
              ;; iterate over each col-cons, all left is columns
              (setf col-index 0)
+             
            l_column
              ;; clear values
              (setf style nil
                    value nil
-                   type nil)
+                   type nil
+                   position nil)
              (incf col-index)
              (setf col-cons (cdr (pop row-cons))) ; column info, like  (("t" "s") ("s" "3") ("r" "A6")) ("v" NIL "18"))
-             ;; skip column if not in column-list 
-             (unless (and column-list
-                          (not (member col-index column-list)))           
-               (setf cell-attributes (car col-cons)) ; ("t" "s") ("s" "3") ("r" "A6")
-               (setf cell-value-cons (second col-cons)) ; ("v" NIL "18")
-               ;; we process the attributes t and s
-               (setf style (second (assoc "s" cell-attributes :test #'string=)))
-               (setf type  (second (assoc "t" cell-attributes :test #'string=)))
-               ;; now we get the value cons
-               (when cell-value-cons ; sometimes there will be no value...
-                 (setf value (third cell-value-cons)))
-               ;; call function for processing all this cell
-               (funcall column-process-function row-index col-index value type style))
+             (setf cell-attributes (car col-cons)) ; ("t" "s") ("s" "3") ("r" "A6")
+             (setf cell-value-cons (second col-cons)) ; ("v" NIL "18")
+             ;; we process the attributes t and s
+             (setf style (second (assoc "s" cell-attributes :test #'string=)))
+             (setf type  (second (assoc "t" cell-attributes :test #'string=)))
+             ;; attribute r has the position (i.e. "A1", "B1" etc)
+             (setf position  (second (assoc "r" cell-attributes :test #'string=)))
+             ;; now we get the value cons
+             (when cell-value-cons ; sometimes there will be no value...
+               (setf value (third cell-value-cons)))
+             ;; call function for processing all this cell
+             (funcall column-process-function row-index value type style position)
              ;; if there are rows in row-cons, we repeat for the next column info
              (if (not (null row-cons)) (go l_column))
            l_rowend
@@ -204,7 +211,6 @@
 
 (defun process-sheet (sheet-struct &key (max-row nil)
                                         (initial-row 1)
-                                        (column-list nil) ;; get only selected columns (list of indexes)
                                         (row-function nil)
                                         (silent nil)
                                         (debug-print nil))
@@ -212,7 +218,7 @@
 "Process sheet (as struct). Reads rows from the sheet-struct and returns them as cons.
   Important options: 
   * max-row & initial-row control the rows to fetch. First row = 1. 
-  * column-list receives a list of column numbers, so only those columns are fetched. First column = 1.
+ 
   * row-function receives a lambda where it gets passed, as an argument, the row's column values (as a list).
                  This can be used, for example, for uploading each row to a DB, etc. 
                  If row-function is defined, then <the row values will not be returned by process-sheet.
@@ -221,7 +227,6 @@
            (type fixnum initial-row)
            (type (or fixnum null) max-row)
            (type boolean silent debug-print)
-           (type (or cons null) column-list)
            (type (or (function (cons)) null) row-function))
   (let* ((date-formats (sheet-date-formats sheet-struct))
          (number-formats (sheet-number-formats sheet-struct))
@@ -229,34 +234,58 @@
          ;; pre-process decisions on how to handle cells
          (decision-vector (%get-col-parse-decisions-vector date-formats number-formats))
          (col-cons nil)
-         (row-cons nil))
+         (row-cons nil)
+         (last-position 0))
     (declare (type (or cons null) row-cons col-cons date-formats number-formats)
              (type (vector string) unique-strings)
-             (type (vector fixnum) decision-vector))           
+             (type (vector fixnum) decision-vector)
+             (type fixnum last-position))           
     (flet 
         
         ((row-begin-function (row-index)
            (declare (type fixnum row-index))
            (setf col-cons nil)
+           (setf last-position 0)
            (when debug-print (format t "~%Row Number = ~D || " row-index)))
-         (column-process-function (row-index col-index value type style)
-           (declare (type fixnum col-index)
-                    (ignore row-index)
-                    (type (or string null) value type style ))
-           (when debug-print (format t "|~D " col-index))
+         (column-process-function (row-index value type style position)
+           (declare (ignore row-index)
+                    (type (or string null) value type style position))
+           (unless position
+             (error "No position info for cell."))
+           (when debug-print (format t "|~A " position))
            ;; log format ID, type and value
            (when debug-print
-             (if style
-                 (format t "(number-format: ~D [style=~D],~A,~A) "
-                         ;; number format type ID 
-                         (car (elt number-formats (parse-integer style)))
-                         style
-                         type
-                         value)
-                 (format t "(NULL STYLE,~A,~A) "
-                         ;; number format type ID 
-                         type
-                         value)))
+             (if number-formats
+                 (if style
+                     (format t "(number-format: ~D [style=~D],~A,~A) "
+                             ;; number format type ID 
+                             (car (elt number-formats (parse-integer style)))
+                             style
+                             type
+                             value)
+                     (format t "(NULL STYLE,~A,~A) "
+                             ;; number format type ID 
+                             type
+                             value))
+                 ;; no number formats
+                 (format t "(style ~A, type ~A, value ~A)"
+                         style type value)
+                 ))
+           ;; IMPORTANT:
+           ;; if the empty cells are not present in the XML (i.e. we have values for A, B, C, and then H comes next)
+           ;; fill the missing column values with NIL
+           (unless (zerop last-position)
+             (let* ((pos (excel-position-to-column-number position))
+                    (diff (- pos last-position)))
+               ;; check if we need to fill missing column values
+               (when (> diff 1)
+                 ;; pad with NIL
+                 (dotimes (dummy (1- diff))
+                   ;(declare (ignore dummy))
+                   (push nil col-cons)))))
+           ;; update last-position
+           (setf last-position
+                 (excel-position-to-column-number position))
            ;; store column value
            (push (%read-col value
                             type
@@ -284,8 +313,7 @@
                        :row-end-function #'row-end-function
                        :final-function #'final-function
                        :max-row max-row
-                       :initial-row initial-row
-                       :column-list column-list))))
+                       :initial-row initial-row))))
                        ;:initial-stream-position initial-stream-position
 
  
@@ -294,7 +322,7 @@
 ;; simple helper
 (defun sheet-first-row (sheet-struct)
   "Obtain first row of sheet"
-  (process-sheet sheet-struct :max-row 1 :silent T))
+  (car (process-sheet sheet-struct :max-row 1 :silent T)))
 
 
 ;; helper for column info
@@ -303,75 +331,77 @@
   format-keyword
   type)
 
-(defun report-cells-type-change (sheet-struct &key (max-row nil)
-                                                   (initial-row 1)
-                                                   (column-list nil)) ;; get only selected columns (list of indexes)
-  "Inspect how cell type changes from row to row. Returns number of changes."
-  (declare (type sheet sheet-struct)
-           (type fixnum initial-row)
-           (type (or null fixnum) max-row)
-           (type (or cons null) column-list))
-  (let* ((number-formats (sheet-number-formats sheet-struct))
-         (info nil)
-         (number-of-changes 0)
-         (blank-row T))
-    ;; (col-count 0))
-    (declare (type (or cons null) info number-formats)
-             (type (boolean) blank-row)    
-             (type fixnum number-of-changes))           
-    (flet ((row-begin-function (row-index)
-             (declare (type fixnum row-index) (ignore row-index))
-             (setf blank-row T))        ; reset blank value (row) flag
+;; (defun report-cells-type-change (sheet-struct &key (max-row nil)
+;;                                                    (initial-row 1)
+;;                                                    (column-list nil)) ;; get only selected columns (list of indexes)
+;;   "Inspect how cell type changes from row to row. Returns number of changes."
+;;   (declare (type sheet sheet-struct)
+;;            (type fixnum initial-row)
+;;            (type (or null fixnum) max-row)
+;;            (type (or cons null) column-list))
+;;   (let* ((number-formats (sheet-number-formats sheet-struct))
+;;          (info nil)
+;;          (number-of-changes 0)
+;;          (blank-row T))
+;;     ;; (col-count 0))
+;;     (declare (type (or cons null) info number-formats)
+;;              (type (boolean) blank-row)    
+;;              (type fixnum number-of-changes))           
+;;     (flet ((row-begin-function (row-index)
+;;              (declare (type fixnum row-index) (ignore row-index))
+;;              (setf blank-row T))        ; reset blank value (row) flag
                                        
-           (column-process-function (row-index col-index value type style)
-             (declare (type fixnum row-index col-index)
-                      (type (or string null) value type style ))
-             ;; compare style, type  for this column, versus previous.
+;;            (column-process-function (row-index col-index value type style)
+;;              (declare (type fixnum row-index col-index)
+;;                       (type (or string null) value type style ))
+;;              ;; compare style, type  for this column, versus previous.
         
-             ;; detect blank values - set to T if all row is blank or blank strings
-             (setf blank-row (and blank-row
-                                  (or (null value) (eq 0 (length value)))))
-             (let* ((fmt-id (car (elt number-formats
-                                      (parse-integer (if (null style) "0" style)))))
-                    (format-keyword (%get-format-type fmt-id))
-                    (cinfo (cdr (assoc col-index info)))
-                    (equal?
-                      (and cinfo ;; there is info for this column
-                           (equal (column-info-format-keyword cinfo) format-keyword)
-                           (equal (column-info-type cinfo) type))))
-               (declare (type fixnum fmt-id)
-                        (type (or symbol null) format-keyword)
-                        (type (or column-info null) cinfo))
-               (unless equal?
-                 ;; different style for this column, protest:
-                 (incf number-of-changes)
-                 (format t "Row ~D: Column ~D changed to format->~A(~D) | type-> ~A ~%"
-                         row-index col-index format-keyword fmt-id type)
-                 ;; store new style info for this column and remove old.
-                 (setf info
-                       (cons (cons col-index (make-column-info :type type
-                                                               :format-id fmt-id
-                                                               :format-keyword format-keyword))
-                             (remove (assoc col-index info) info))))))
+;;              ;; detect blank values - set to T if all row is blank or blank strings
+;;              (setf blank-row (and blank-row
+;;                                   (or (null value) (eq 0 (length value)))))
+;;              (let* ((fmt-id (car (elt number-formats
+;;                                       (parse-integer (if (null style) "0" style)))))
+;;                     (format-keyword (%get-format-type fmt-id))
+;;                     (cinfo (cdr (assoc col-index info)))
+;;                     (equal?
+;;                       (and cinfo ;; there is info for this column
+;;                            (equal (column-info-format-keyword cinfo) format-keyword)
+;;                            (equal (column-info-type cinfo) type))))
+;;                (declare (type fixnum fmt-id)
+;;                         (type (or symbol null) format-keyword)
+;;                         (type (or column-info null) cinfo))
+;;                (unless equal?
+;;                  ;; different style for this column, protest:
+;;                  (incf number-of-changes)
+;;                  (format t "Row ~D: Column ~D changed to format->~A(~D) | type-> ~A ~%"
+;;                          row-index col-index format-keyword fmt-id type)
+;;                  ;; store new style info for this column and remove old.
+;;                  (setf info
+;;                        (cons (cons col-index (make-column-info :type type
+;;                                                                :format-id fmt-id
+;;                                                                :format-keyword format-keyword))
+;;                              (remove (assoc col-index info) info))))))
             
-           (row-end-function (row-index)
-             (declare (type fixnum row-index))
-             (when blank-row
-               (format t "~%*********** WARNING : row ~D all blank. ************ ~%~%" row-index)
-               ))
-           (final-function  ()
-             (format t "Number of changes: ~D" number-of-changes)
-             number-of-changes
-             ))
-      ;; call to the function that performs the actual process
-      (%%process-sheet sheet-struct
-                       :row-begin-function #'row-begin-function
-                       :column-process-function #'column-process-function
-                       :row-end-function #'row-end-function
-                       :final-function #'final-function
-                       :max-row max-row
-                       :initial-row initial-row
-                       :column-list column-list))))
+;;            (row-end-function (row-index)
+;;              (declare (type fixnum row-index))
+;;              (when blank-row
+;;                (format t "~%*********** WARNING : row ~D all blank. ************ ~%~%" row-index)
+;;                ))
+;;            (final-function  ()
+;;              (format t "Number of changes: ~D" number-of-changes)
+;;              number-of-changes
+;;              ))
+;;       ;; call to the function that performs the actual process
+;;       (if (sheet-number-formats sheet-struct)
+;;           (%%process-sheet sheet-struct
+;;                            :row-begin-function #'row-begin-function
+;;                            :column-process-function #'column-process-function
+;;                            :row-end-function #'row-end-function
+;;                            :final-function #'final-function
+;;                            :max-row max-row
+;;                            :initial-row initial-row
+;;                            :column-list column-list)
+;;           (error "No number formats information available for sheet ~A" sheet-struct)))))
 
 
 ;; (defparameter *safety-stream-position-margin* 100

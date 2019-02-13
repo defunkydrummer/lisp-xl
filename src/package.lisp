@@ -1,5 +1,11 @@
 (in-package :cl-user)
 
+(defpackage :lisp-xl.util
+  (:use #:cl)
+  (:export :excel-position-to-column-number
+   :label-difference
+   :nfilter-eol))
+
 (defpackage :lisp-xl.metadata
   (:use #:cl)
   (:export #:get-entry
@@ -12,7 +18,8 @@
            ))
 
 (defpackage :lisp-xl
-  (:use #:cl #|:xspam|# :lisp-xl.metadata)
+  (:use #:cl #|:xspam|# :lisp-xl.metadata
+        :lisp-xl.util)
   (:export #:list-sheets
            #:read-sheet
            #:process-sheet

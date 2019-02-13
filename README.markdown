@@ -4,19 +4,16 @@ Common Lisp Library for working with  Microsoft Excel XLSX files, for example fo
 
 It does *not* load the whole file into RAM, thus, processing large files is possible. However, be careful with files that contain a lot of "unique strings" (strings that do not repeat frequently on the file), for they need to be loaded onto RAM. 
 
+**NOTE:** This library is still under development, API might change slightly over time. 
+
 ## Reason for being
 
 In the business world, when your request a "data dump" from a customer's system,  you usually want the customer to give you the data in the form of compressed, tidy CSV files. In real life, often you will get a huge XLSX files instead, where for example the first row isn't the header row, blank rows here and there, etc. In short, files that aren't ready for uplaoding... So, read the mundane Microsoft XLSX files using the celestial programming language, Common Lisp!
 
-You can use the (report-cells-type-change) function to take a look at the presence of blank lines or unexpected cell format change in the whole XLSX file.  
-
 ## Features
 
 * Does NOT load the whole file into RAM.
-* Report of "offending" cells; that is, cells that change data type along the way. 
-* Report of unexpected blank rows
-* Loads and uncompresses the XLSX sheet file only once, to save time.
-* Able to select/load only a range of rows, and/or only a selected range of columns.
+* Loads and uncompresses the XLSX sheet file only once, to save time when reading it more than once.
 
 ## TODO
 
@@ -40,9 +37,6 @@ Typical process is as follows:
 (defparameter *s* (read-sheet *f* 1)) ; read first sheet of file *f*
 (process-sheet *s* :max-row 100) ;; obtain some rows as cons
 
-;; Do a report on which cells/rows change format along the file.
-(report-cells-type-change *s* :max-row 100)
-
 ;; delete temp file / close sheet
 (close-sheet *s*)
 
@@ -54,8 +48,8 @@ Another way is using the macro "With open-excel-sheet", which opens the sheet, p
 
 (with-open-excel-sheet (*f* 1 sheet)
            ;; do stuff with 'sheet'
-           (report-cells-type-change
-             sheet :max-row 20))
+           ;; ...
+           )
 
 ```
 
@@ -71,19 +65,20 @@ To do useful stuff, you would create a function that will process each row and d
              (process-sheet sheet :max-row 10 :initial-row 2 :row-function #'f)))
 ```
 
-Or you can work on all the sheets in the file. For example here we run the 'report' on all sheets: 
+Or you can work on all the sheets in the file. For example:
 
 ```common-lisp
 
 (with-all-excel-sheets (file sh index name) ;bind sheet index and name 
-    (format t "~% Reporting on sheet ~A ~%" name)
-    (report-cells-type-change sh :initial-row 2 :column-list column-list ))
+    (format t "~% Working on sheet ~A ~%" name)
+    ;; do stuff...
+    )
     
 ```
 
 ### CSV Export
 
-CSV Export is very simple, see csv-export.lisp for an example (using cl-csv). 
+CSV Export is available by using  `lisp-xl-csv:excel-to-csv`, at csv-export.lisp. 
 
 ## Uses
 
@@ -91,6 +86,7 @@ CSV Export is very simple, see csv-export.lisp for an example (using cl-csv).
 * ZIP (xlsx files are zipped)
 * xmls
 * uiop 
+* cl-ppcr
 
 ## Caveats
 

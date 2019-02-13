@@ -53,7 +53,7 @@
                                        numfmts))))
        (unless numfmts
          ;; no number format information
-         (format t "Lisp-xl warning: File has no number format information. Proceed with caution ~%")
+         (format t "Lisp-xl warning: File has no number format information. Proceed with caution! ~%")
          ;; return the empty list
          nil)
        (let*
