@@ -8,7 +8,7 @@
 
 (defparameter *element-type* '(unsigned-byte 8))
 
-(defparameter *dummy-vector* (make-array 1 :element-type 'string :adjustable T :fill-pointer 0))
+(defparameter *dummy-vector* (make-array 1 :element-type 'string :adjustable t :fill-pointer 0))
 ;; Struct for containing sheet information
 (defstruct sheet
   (unique-strings *dummy-vector*
@@ -78,7 +78,7 @@
             sheet-struct
             ))))))
 
-(defmacro with-open-excel-sheet ((pathname sheet-index sheet-symbol &optional (silent T)) &body body)
+(defmacro with-open-excel-sheet ((pathname sheet-index sheet-symbol &optional (silent t)) &body body)
   "Open excel sheet, and execute body. Sheet struct is bound to sheet-symbol"
   (let ((result-var (gensym "result-")))
     `(let* ((,sheet-symbol (read-sheet ,pathname ,sheet-index :silent ,silent))
@@ -89,7 +89,7 @@
        ,result-var)))
 
 ;; similar but uses all sheets
-(defmacro with-all-excel-sheets ((pathname sheet-symbol index-symbol name-symbol &optional (silent T)) &body body)
+(defmacro with-all-excel-sheets ((pathname sheet-symbol index-symbol name-symbol &optional (silent t)) &body body)
   "For every sheet in excel file, execute body. Sheet struct is bound to sheet-symbol.
    Sheet index is bound to index-symbol.
    Sheet name is bound to name-symbol"
@@ -322,7 +322,7 @@
 ;; simple helper
 (defun sheet-first-row (sheet-struct)
   "Obtain first row of sheet"
-  (car (process-sheet sheet-struct :max-row 1 :silent T)))
+  (car (process-sheet sheet-struct :max-row 1 :silent t)))
 
 
 ;; helper for column info

@@ -27,7 +27,7 @@
   "Retrieves VECTOR  of unique strings used on the file. Will be used later for retrieving string values from the xlsx file."
   (let ((vector (make-array *initial-unique-strings-array-size* :element-type 'string
                                                                 :fill-pointer 0
-                                                                :adjustable T)))
+                                                                :adjustable t)))
     (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
           for x = (xmls:xmlrep-find-child-tag :t str)
           do
