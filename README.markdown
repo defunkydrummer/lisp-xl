@@ -115,7 +115,7 @@ Flavio Egoavil (f_egoavil at microsoft's ancient, high temperature mail system.)
 * Akihide Nano, for putting Carlos' library in GitHub.
 
 For working with *small* XLSX files in a Cell-oriented way (i.e. "A1", "B4", etc), you might want to take a look at Carlos library:
-https://gitlab.common-lisp.net/cungil/xlsx](https://gitlab.common-lisp.net/cungil/xlsx)
+[https://gitlab.common-lisp.net/cungil/xlsx](https://gitlab.common-lisp.net/cungil/xlsx)
 
 Japanese users may want to use Akihide Nano(a-nano) library which is based on Carlos Ungil's:
 https://github.com/a-nano/xlsx
