@@ -3,7 +3,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *regex* (cl-ppcre:create-scanner "^[A-Z]+"
                                                  :case-insensitive-mode nil
-                                                 :single-line-mode T)
+                                                 :single-line-mode t)
     "Regex to capture column number (alphanumerical, i.e. 'AA')"))
 
 (defun get-column-label (str)
