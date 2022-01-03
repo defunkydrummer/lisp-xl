@@ -109,7 +109,8 @@
                           row-end-function
                           final-function
                           (max-row nil)
-                          (initial-row 1)) 
+                          (initial-row 1)
+			  (output-value nil)) 
                                         ;(initial-stream-position nil) 
   
   "Generalized Process sheet (as struct)"
@@ -181,7 +182,9 @@
              (incf col-index)
              (setf col-cons (cdr (pop row-cons))) ; column info, like  (("t" "s") ("s" "3") ("r" "A6")) ("v" NIL "18"))
              (setf cell-attributes (car col-cons)) ; ("t" "s") ("s" "3") ("r" "A6")
-             (setf cell-value-cons (second col-cons)) ; ("v" NIL "18")
+	     (if (and output-value (equal "f" (car (second col-cons))))
+		 (setf cell-value-cons (third col-cons))
+		 (setf cell-value-cons (second col-cons))) ; ("v" NIL "18")
              ;; we process the attributes t and s
              (setf style (second (assoc "s" cell-attributes :test #'string=)))
              (setf type  (second (assoc "t" cell-attributes :test #'string=)))
@@ -213,7 +216,8 @@
                                         (initial-row 1)
                                         (row-function nil)
                                         (silent nil)
-                                        (debug-print nil))
+				        (debug-print nil)
+				        (output-value nil))
                                         ;(initial-stream-position nil)) ;; for future use...
 "Process sheet (as struct). Reads rows from the sheet-struct and returns them as cons.
   Important options: 
@@ -313,7 +317,8 @@
                        :row-end-function #'row-end-function
                        :final-function #'final-function
                        :max-row max-row
-                       :initial-row initial-row))))
+                       :initial-row initial-row
+		       :output-value output-value))))
                        ;:initial-stream-position initial-stream-position
 
  
