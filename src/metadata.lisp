@@ -21,6 +21,17 @@
         collect (cons (xmls:xmlrep-attrib-value "Id" rel)
                       (xmls:xmlrep-attrib-value "Target" rel))))
 
+(defun push-vector (str vector)
+  (cond ((equal (xmls:node-attrs str) '(("space" "preserve")))
+	 (vector-push-extend " "
+			     vector *initial-unique-strings-array-size*))
+	((xmls:xmlrep-children str)
+	 (vector-push-extend (xmls:xmlrep-string-child str)
+			     vector *initial-unique-strings-array-size*))
+	(t (format t "Warning: Strange entry on unique strings? ~A" str)
+	   (vector-push-extend " "
+			       vector *initial-unique-strings-array-size*))))
+  
 ;; From Carlos Ungil
 ;; defunkydrummer-> converted to return an adjustable vector (!) 
 (defun get-unique-strings-vector (zip)
@@ -28,18 +39,21 @@
   (let ((vector (make-array *initial-unique-strings-array-size* :element-type 'string
                                                                 :fill-pointer 0
                                                                 :adjustable T)))
-    (loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
-          for x = (xmls:xmlrep-find-child-tag :t str)
-          do
-          (cond ((equal (xmls:node-attrs x) '(("space" "preserve")))
-                 (vector-push-extend " "
-                                     vector *initial-unique-strings-array-size*))
-                ((xmls:xmlrep-children x)
-                 (vector-push-extend (xmls:xmlrep-string-child x)
-                                     vector *initial-unique-strings-array-size*))
-                (t (format t "Warning: Strange entry on unique strings? ~A" x)
-                   (vector-push-extend " "
-                                       vector *initial-unique-strings-array-size*))))
+	(loop for str in (xmls:xmlrep-find-child-tags :si (get-entry "xl/sharedStrings.xml" zip))
+	      for x = (xmls:xmlrep-find-child-tag :t str :skip)
+	      do
+		 (when (equal x :skip)
+		     (let ((vector2 (make-array *initial-unique-strings-array-size* :element-type 'string
+										    :fill-pointer 0
+										    :adjustable T)))
+		       (loop for str2 in (xmls:xmlrep-find-child-tags :r str)
+			     for y = (xmls:xmlrep-find-child-tag :t str2 :skip)
+			     do
+				(push-vector y vector2))
+		       (vector-push-extend (reduce #'(lambda (s1 s2) (concatenate 'string s1 s2)) vector2) vector *initial-unique-strings-array-size*)))
+		 
+		 (unless (equal x :skip)
+		   (push-vector x vector)))
     vector))
 
 ;; From Carlos Ungil
